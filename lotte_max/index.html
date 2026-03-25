@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lotto Max Historical Results</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: Arial, sans-serif; margin: 0; background:#0f172a; color:#e2e8f0; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; }
+    .muted { color:#94a3b8; margin-bottom: 20px; }
+    .toolbar { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+    input { padding:10px 12px; border-radius:10px; border:1px solid #334155; background:#111827; color:#fff; min-width:220px; }
+    button { padding:10px 14px; border:0; border-radius:10px; background:#2563eb; color:#fff; cursor:pointer; }
+    .card { background:#111827; border:1px solid #1f2937; border-radius:14px; overflow:hidden; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:12px 14px; border-bottom:1px solid #1f2937; text-align:left; }
+    th { background:#0b1220; position:sticky; top:0; }
+    .nums { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing:1px; }
+    .footer { margin-top:16px; font-size:12px; color:#94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Lotto Max Historical Winning Numbers</h1>
+    <div class="muted">Simple list of draw date and winning numbers.</div>
+
+    <div class="toolbar">
+      <input id="search" placeholder="Filter by date or number..." />
+      <button id="reload">Reload data</button>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:220px">Draw Date</th>
+            <th>Winning Numbers</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="footer" id="status">Loading…</div>
+  </div>
+
+  <script>
+    let allRows = [];
+    const rowsEl = document.getElementById('rows');
+    const statusEl = document.getElementById('status');
+    const searchEl = document.getElementById('search');
+
+    function render(rows) {
+      rowsEl.innerHTML = rows.map(r => `
+        <tr>
+          <td>${r.drawDate}</td>
+          <td class="nums">${r.numbers.join(' ')}${r.bonus ? ` | Bonus ${r.bonus}` : ''}</td>
+        </tr>
+      `).join('');
+      statusEl.textContent = `${rows.length} draw(s)`;
+    }
+
+    async function loadData() {
+      statusEl.textContent = 'Loading…';
+      const res = await fetch('./results.json', { cache: 'no-store' });
+      allRows = await res.json();
+      render(allRows);
+    }
+
+    searchEl.addEventListener('input', () => {
+      const q = searchEl.value.trim().toLowerCase();
+      if (!q) return render(allRows);
+      render(allRows.filter(r => (
+        r.drawDate.toLowerCase().includes(q) ||
+        r.numbers.join(' ').toLowerCase().includes(q) ||
+        String(r.bonus || '').includes(q)
+      )));
+    });
+
+    document.getElementById('reload').addEventListener('click', loadData);
+    loadData();
+  </script>
+</body>
+</html>
