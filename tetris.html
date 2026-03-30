@@ -30,7 +30,8 @@
 
         body {
             min-height: 100vh;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
             touch-action: none;
             color: var(--text);
             font-family: 'IBM Plex Mono', monospace;
@@ -397,7 +398,10 @@
                 grid-template-columns: repeat(3, minmax(0, 1fr));
             }
             .board-frame {
-                padding: 12px;
+                padding: 6px;
+            }
+            .board-glow {
+                inset: 8px;
             }
             canvas {
                 width: 100%;
@@ -412,6 +416,15 @@
         }
 
         @media (max-width: 420px) {
+            html, body {
+                overflow-y: auto;
+            }
+            body {
+                touch-action: pan-y;
+            }
+            .cabinet {
+                padding: 14px;
+            }
             .sidebar {
                 padding: 14px;
             }
