@@ -377,130 +377,126 @@
         @media (max-width: 640px) {
             body {
                 overflow: hidden;
-                padding: 10px 8px;
+                padding: 6px;
             }
             .shell {
                 width: 100%;
                 max-width: 100%;
-                gap: 10px;
+                gap: 6px;
                 grid-template-columns: 1fr;
             }
             .cabinet, .sidebar {
-                border-radius: 18px;
-                padding: 12px;
+                border-radius: 16px;
+                padding: 8px;
                 width: 100%;
             }
             .cabinet-header {
-                flex-direction: column;
-                align-items: flex-start;
-                margin-bottom: 10px;
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 6px;
+                gap: 8px;
             }
-            .eyebrow {
-                font-size: 10px;
+            .eyebrow,
+            .subtitle {
+                display: none;
             }
             .title {
-                font-size: clamp(22px, 6vw, 30px);
-            }
-            .subtitle {
-                font-size: 11px;
-                line-height: 1.35;
+                font-size: 18px;
+                line-height: 1;
             }
             .status-pill {
-                padding: 7px 10px;
-                font-size: 10px;
+                padding: 5px 8px;
+                font-size: 9px;
             }
             .stats-grid {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
-            }
-            .stat-card {
-                border-radius: 16px;
-                padding: 10px 8px;
-            }
-            .label {
-                font-size: 9px;
-                margin-bottom: 6px;
-            }
-            .value {
-                font-size: 20px;
-            }
-            .preview-card {
-                padding: 10px;
                 gap: 6px;
             }
+            .stat-card,
+            .preview-card,
+            .mobile-controls {
+                border-radius: 14px;
+                padding: 8px 6px;
+            }
+            .label {
+                font-size: 8px;
+                margin-bottom: 4px;
+            }
+            .value {
+                font-size: 16px;
+            }
+            .preview-card {
+                gap: 4px;
+            }
             #nextPiece {
-                width: 92px;
-                height: 92px;
+                width: 68px;
+                height: 68px;
             }
             .board-frame {
-                padding: 4px;
-                border-radius: 16px;
+                padding: 2px;
+                border-radius: 14px;
+                display: flex;
+                justify-content: center;
             }
             .board-glow {
-                inset: 6px;
+                inset: 3px;
             }
             canvas {
-                width: 100%;
-                max-width: 100%;
+                width: min(68vw, 232px);
+                max-width: 232px;
             }
             .mobile-controls {
                 display: block;
-                padding: 12px;
             }
-            .mobile-controls h3 {
-                font-size: 11px;
-                margin-bottom: 8px;
-            }
+            .mobile-controls h3,
             .hint {
                 display: none;
             }
-            .btn-grid {
-                gap: 8px;
-            }
+            .btn-grid,
             .btn-row {
-                gap: 8px;
+                gap: 6px;
             }
             .mobile-btn {
-                min-width: 58px;
-                height: 46px;
-                font-size: 18px;
-                border-radius: 14px;
+                min-width: 50px;
+                height: 38px;
+                font-size: 16px;
+                border-radius: 12px;
             }
             .mobile-btn.wide {
-                min-width: 124px;
+                min-width: 108px;
             }
         }
 
         @media (max-width: 420px) {
             body {
-                padding: 8px 6px;
+                padding: 4px;
             }
             .cabinet,
             .sidebar {
-                padding: 10px;
+                padding: 6px;
             }
             .title {
-                font-size: 20px;
-            }
-            .subtitle {
-                font-size: 10px;
-            }
-            .stats-grid {
-                gap: 8px;
+                font-size: 16px;
             }
             .value {
-                font-size: 18px;
+                font-size: 15px;
             }
             #nextPiece {
-                width: 82px;
-                height: 82px;
+                width: 60px;
+                height: 60px;
+            }
+            canvas {
+                width: min(66vw, 220px);
+                max-width: 220px;
             }
             .mobile-btn {
-                min-width: 54px;
-                height: 42px;
-                font-size: 17px;
+                min-width: 46px;
+                height: 34px;
+                font-size: 15px;
             }
             .mobile-btn.wide {
-                min-width: 118px;
+                min-width: 98px;
             }
         }
     </style>
