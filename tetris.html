@@ -236,6 +236,22 @@
             padding: 16px 18px;
         }
 
+        .preview-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #nextPiece {
+            width: 120px;
+            height: 120px;
+            border-radius: 16px;
+            background: linear-gradient(180deg, rgba(8,12,24,0.98), rgba(6,10,18,0.98));
+            border: 1px solid rgba(114,244,255,0.16);
+            box-shadow: inset 0 0 18px rgba(114,244,255,0.06);
+        }
+
         .hint h3,
         .mobile-controls h3 {
             font-size: 13px;
@@ -458,6 +474,11 @@
                 </div>
             </div>
 
+            <div class="stat-card preview-card">
+                <div class="label">Next Piece</div>
+                <canvas id="nextPiece" width="120" height="120"></canvas>
+            </div>
+
             <div class="hint">
                 <h3>Controls</h3>
                 <ul>
@@ -499,6 +520,8 @@
     <script>
         const canvas = document.getElementById('board');
         const ctx = canvas.getContext('2d');
+        const nextCanvas = document.getElementById('nextPiece');
+        const nextCtx = nextCanvas.getContext('2d');
         const statusPill = document.getElementById('statusPill');
         const COLS = 10;
         const ROWS = 20;
@@ -518,6 +541,7 @@
 
         let board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
         let current = null;
+        let nextPiece = null;
         let score = 0;
         let level = 1;
         let lines = 0;
@@ -536,6 +560,52 @@
                 x: Math.floor(COLS / 2) - Math.floor(SHAPES[idx][0].length / 2),
                 y: 0
             };
+        }
+
+        function drawNextPiece() {
+            nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+            const bg = nextCtx.createLinearGradient(0, 0, 0, nextCanvas.height);
+            bg.addColorStop(0, '#08101f');
+            bg.addColorStop(1, '#050912');
+            nextCtx.fillStyle = bg;
+            nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+
+            nextCtx.strokeStyle = 'rgba(114, 244, 255, 0.08)';
+            for (let i = 0; i <= 4; i++) {
+                const pos = i * 30;
+                nextCtx.beginPath();
+                nextCtx.moveTo(pos + 0.5, 0);
+                nextCtx.lineTo(pos + 0.5, nextCanvas.height);
+                nextCtx.stroke();
+                nextCtx.beginPath();
+                nextCtx.moveTo(0, pos + 0.5);
+                nextCtx.lineTo(nextCanvas.width, pos + 0.5);
+                nextCtx.stroke();
+            }
+
+            if (!nextPiece) return;
+
+            const shape = nextPiece.shape;
+            const block = 24;
+            const pieceWidth = shape[0].length * block;
+            const pieceHeight = shape.length * block;
+            const offsetX = (nextCanvas.width - pieceWidth) / 2;
+            const offsetY = (nextCanvas.height - pieceHeight) / 2;
+
+            shape.forEach((row, y) => {
+                row.forEach((val, x) => {
+                    if (!val) return;
+                    const px = offsetX + x * block;
+                    const py = offsetY + y * block;
+                    const grad = nextCtx.createLinearGradient(px, py, px + block, py + block);
+                    grad.addColorStop(0, nextPiece.color);
+                    grad.addColorStop(1, shadeColor(nextPiece.color, -18));
+                    nextCtx.fillStyle = grad;
+                    nextCtx.fillRect(px, py, block - 2, block - 2);
+                    nextCtx.fillStyle = 'rgba(255,255,255,0.22)';
+                    nextCtx.fillRect(px + 2, py + 2, block - 10, 4);
+                });
+            });
         }
 
         function drawBlock(x, y, color) {
@@ -639,7 +709,9 @@
                 updateUI();
             }
 
-            current = newPiece();
+            current = nextPiece;
+            nextPiece = newPiece();
+            drawNextPiece();
             if (collide(current.x, current.y, current.shape)) endGame();
         }
 
@@ -710,7 +782,9 @@
             gameOver = false;
             paused = false;
             current = newPiece();
+            nextPiece = newPiece();
             updateUI();
+            drawNextPiece();
             setStatus('Live Run');
             document.getElementById('gameOver').style.display = 'none';
             lastDrop = performance.now();
@@ -777,7 +851,9 @@
         }, { passive: true });
 
         current = newPiece();
+        nextPiece = newPiece();
         updateUI();
+        drawNextPiece();
         draw();
         lastDrop = performance.now();
         requestAnimationFrame(update);
