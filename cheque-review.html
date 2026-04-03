@@ -230,17 +230,22 @@
       overflow: auto;
       border-radius: 22px;
       background: linear-gradient(180deg, rgba(235,242,255,0.9), rgba(223,234,252,0.9));
-      padding: 20px;
+      padding: 10px;
       border: 1px solid rgba(167, 182, 214, 0.5);
+      min-height: calc(100vh - 180px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .rotated-stage {
-      width: 560px;
-      height: 1140px;
+      width: 520px;
+      height: 1120px;
       margin: 0 auto;
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: visible;
     }
 
     .cheque {
@@ -248,7 +253,7 @@
       width: 1080px;
       height: 470px;
       margin: 0;
-      transform: rotate(90deg);
+      transform: rotate(90deg) scale(0.96);
       transform-origin: center center;
       background:
         linear-gradient(180deg, rgba(245, 247, 251, 0.85), rgba(255, 252, 245, 0.92)),
@@ -426,6 +431,25 @@
     @media (max-width: 1180px) {
       .app {
         padding: 20px;
+      }
+
+      .sheet-wrap {
+        min-height: auto;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .sheet-wrap {
+        padding: 8px;
+      }
+
+      .rotated-stage {
+        width: 420px;
+        height: 900px;
+      }
+
+      .cheque {
+        transform: rotate(90deg) scale(0.76);
       }
     }
   </style>
