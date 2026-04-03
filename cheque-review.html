@@ -125,6 +125,12 @@
       gap: 10px;
     }
 
+    .triple-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
     .actions {
       display: flex;
       gap: 10px;
@@ -190,6 +196,81 @@
       border-radius: 20px;
       background: linear-gradient(180deg, rgba(235,242,255,0.9), rgba(224,234,251,0.9));
       border: 1px solid rgba(189, 202, 228, 0.6);
+    }
+
+    .layout-stage {
+      width: max-content;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 44px 816px;
+      grid-template-rows: 1056px 44px;
+      gap: 0;
+      align-items: start;
+      justify-items: start;
+    }
+
+    .ruler {
+      position: relative;
+      background: linear-gradient(180deg, #f7f9fe, #eef3fc);
+      border: 1px solid #d9e1ef;
+      color: #7a88a5;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      overflow: hidden;
+    }
+
+    .ruler-y {
+      width: 44px;
+      height: 1056px;
+      border-right: 0;
+      border-radius: 12px 0 0 12px;
+      background-image: repeating-linear-gradient(
+        to bottom,
+        rgba(75,111,255,0.18) 0 1px,
+        transparent 1px 24px
+      );
+      background-size: 100% 24px;
+    }
+
+    .ruler-x {
+      width: 816px;
+      height: 44px;
+      border-top: 0;
+      border-radius: 0 0 12px 12px;
+      background-image: repeating-linear-gradient(
+        to right,
+        rgba(75,111,255,0.18) 0 1px,
+        transparent 1px 24px
+      );
+      background-size: 24px 100%;
+    }
+
+    .ruler-corner {
+      width: 44px;
+      height: 44px;
+      border: 1px solid #d9e1ef;
+      border-top: 0;
+      border-right: 0;
+      border-radius: 0 0 0 12px;
+      background: linear-gradient(180deg, #f7f9fe, #eef3fc);
+    }
+
+    .ruler-mark {
+      position: absolute;
+      color: #7a88a5;
+      opacity: 0.9;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .ruler-y .ruler-mark {
+      left: 6px;
+      transform: translateY(-50%);
+    }
+
+    .ruler-x .ruler-mark {
+      top: 6px;
+      transform: translateX(-50%);
     }
 
     .page {
@@ -330,6 +411,21 @@
         </div>
       </div>
 
+      <div class="triple-row">
+        <div class="field">
+          <label for="payeeFontInput">Payee font</label>
+          <input id="payeeFontInput" type="number" value="26" min="8" max="96" />
+        </div>
+        <div class="field">
+          <label for="amountFontInput">Amount font</label>
+          <input id="amountFontInput" type="number" value="28" min="8" max="96" />
+        </div>
+        <div class="field">
+          <label for="dateFontInput">Date font</label>
+          <input id="dateFontInput" type="number" value="20" min="8" max="96" />
+        </div>
+      </div>
+
       <div class="actions">
         <button class="primary" id="printBtn">Print</button>
         <button class="secondary" id="resetBtn">Reset layout</button>
@@ -348,10 +444,15 @@
       </div>
 
       <div class="page-wrap">
-        <div class="page" id="page">
-          <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 96px; top: 180px; width: 420px; height: 54px;">Sample Payee Name<div class="resize"></div></div>
-          <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 96px; top: 262px; width: 520px; height: 86px;">One hundred twenty-three and 45/100<div class="resize"></div></div>
-          <div class="item date-item" id="dateItem" data-key="date" style="left: 540px; top: 110px; width: 180px; height: 42px;">02 04 2026<div class="resize"></div></div>
+        <div class="layout-stage">
+          <div class="ruler ruler-y" id="rulerY"></div>
+          <div class="page" id="page">
+            <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 96px; top: 180px; width: 420px; height: 54px; font-size: 26px;">Sample Payee Name<div class="resize"></div></div>
+            <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 96px; top: 262px; width: 520px; height: 86px; font-size: 28px;">One hundred twenty-three and 45/100<div class="resize"></div></div>
+            <div class="item date-item" id="dateItem" data-key="date" style="left: 540px; top: 110px; width: 180px; height: 42px; font-size: 20px;">02 04 2026<div class="resize"></div></div>
+          </div>
+          <div class="ruler-corner"></div>
+          <div class="ruler ruler-x" id="rulerX"></div>
         </div>
       </div>
 
@@ -366,7 +467,12 @@
     const amountWordsInput = document.getElementById('amountWordsInput');
     const snapInput = document.getElementById('snapInput');
     const zoomInput = document.getElementById('zoomInput');
+    const payeeFontInput = document.getElementById('payeeFontInput');
+    const amountFontInput = document.getElementById('amountFontInput');
+    const dateFontInput = document.getElementById('dateFontInput');
     const page = document.getElementById('page');
+    const rulerX = document.getElementById('rulerX');
+    const rulerY = document.getElementById('rulerY');
     const statusbar = document.getElementById('statusbar');
 
     const payeeItem = document.getElementById('payeeItem');
@@ -440,6 +546,28 @@
       amountItem.childNodes[0].nodeValue = amountWords;
       dateItem.childNodes[0].nodeValue = dateInput.value || ' ';
       amountWordsInput.value = amountWords;
+      payeeItem.style.fontSize = `${payeeFontInput.value || 26}px`;
+      amountItem.style.fontSize = `${amountFontInput.value || 28}px`;
+      dateItem.style.fontSize = `${dateFontInput.value || 20}px`;
+    }
+
+    function buildRuler() {
+      rulerX.innerHTML = '';
+      rulerY.innerHTML = '';
+      for (let x = 0; x <= 816; x += 48) {
+        const mark = document.createElement('div');
+        mark.className = 'ruler-mark';
+        mark.style.left = `${x}px`;
+        mark.textContent = x;
+        rulerX.appendChild(mark);
+      }
+      for (let y = 0; y <= 1056; y += 48) {
+        const mark = document.createElement('div');
+        mark.className = 'ruler-mark';
+        mark.style.top = `${y}px`;
+        mark.textContent = y;
+        rulerY.appendChild(mark);
+      }
     }
 
     function snap(value) {
@@ -538,8 +666,9 @@
       setStatus(`Zoom set to ${Math.round(zoom * 100)}%.`);
     });
 
-    [payeeInput, amountInput, dateInput].forEach(input => input.addEventListener('input', syncText));
+    [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
 
+    buildRuler();
     syncText();
   </script>
 </body>
