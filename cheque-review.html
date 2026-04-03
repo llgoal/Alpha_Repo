@@ -216,6 +216,24 @@
       justify-items: start;
     }
 
+    .layout-stage.portrait {
+      grid-template-columns: var(--ruler-size) var(--canvas-height);
+      grid-template-rows: var(--canvas-width) var(--ruler-size);
+    }
+
+    .layout-stage.portrait .ruler-y {
+      height: var(--canvas-width);
+    }
+
+    .layout-stage.portrait .ruler-x {
+      width: var(--canvas-height);
+    }
+
+    .layout-stage.portrait .page {
+      width: var(--canvas-height);
+      height: var(--canvas-width);
+    }
+
     .ruler {
       position: relative;
       background: linear-gradient(180deg, #f7f9fe, #eef3fc);
@@ -432,6 +450,45 @@
         </div>
       </div>
 
+      <div class="field">
+        <label for="selectedItemInput">Selected block</label>
+        <select id="selectedItemInput">
+          <option value="payee">Payee</option>
+          <option value="amountWords">Amount in words</option>
+          <option value="date">Date</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="xInput">X (in)</label>
+          <input id="xInput" type="number" step="0.01" min="0" />
+        </div>
+        <div class="field">
+          <label for="yInput">Y (in)</label>
+          <input id="yInput" type="number" step="0.01" min="0" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="widthInput">Width (in)</label>
+          <input id="widthInput" type="number" step="0.01" min="0.25" />
+        </div>
+        <div class="field">
+          <label for="heightInput">Height (in)</label>
+          <input id="heightInput" type="number" step="0.01" min="0.25" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="orientationInput">Canvas orientation</label>
+        <select id="orientationInput">
+          <option value="landscape" selected>Landscape</option>
+          <option value="portrait">Portrait</option>
+        </select>
+      </div>
+
       <div class="actions">
         <button class="primary" id="printBtn">Print</button>
         <button class="secondary" id="resetBtn">Reset layout</button>
@@ -440,7 +497,7 @@
       <div class="help">
         - Drag any text block to move it.<br>
         - Drag the blue handle to resize the text box width/height.<br>
-        - The amount in words updates automatically from the numeric amount.<br>
+        - You can also set exact X/Y and width/height in inches.<br>
         - Grid cells are exactly <strong>1 inch</strong>, and the canvas is exactly <strong>7⅓ in × 3½ in</strong>.
       </div>
     </section>
@@ -477,7 +534,14 @@
     const payeeFontInput = document.getElementById('payeeFontInput');
     const amountFontInput = document.getElementById('amountFontInput');
     const dateFontInput = document.getElementById('dateFontInput');
+    const selectedItemInput = document.getElementById('selectedItemInput');
+    const xInput = document.getElementById('xInput');
+    const yInput = document.getElementById('yInput');
+    const widthInput = document.getElementById('widthInput');
+    const heightInput = document.getElementById('heightInput');
+    const orientationInput = document.getElementById('orientationInput');
     const page = document.getElementById('page');
+    const layoutStage = document.querySelector('.layout-stage');
     const rulerX = document.getElementById('rulerX');
     const rulerY = document.getElementById('rulerY');
     const statusbar = document.getElementById('statusbar');
@@ -568,16 +632,56 @@
         const mark = document.createElement('div');
         mark.className = 'ruler-mark';
         mark.style.left = `${x}px`;
-        mark.textContent = (x / inchPx).toFixed(x === 0 ? 0 : 0) + '″';
+        mark.textContent = `${Math.round(x / inchPx)}″`;
         rulerX.appendChild(mark);
       }
       for (let y = 0; y <= heightPx; y += inchPx) {
         const mark = document.createElement('div');
         mark.className = 'ruler-mark';
         mark.style.top = `${y}px`;
-        mark.textContent = (y / inchPx).toFixed(y === 0 ? 0 : 0) + '″';
+        mark.textContent = `${Math.round(y / inchPx)}″`;
         rulerY.appendChild(mark);
       }
+    }
+
+    function getItemByKey(key) {
+      if (key === 'payee') return payeeItem;
+      if (key === 'amountWords') return amountItem;
+      return dateItem;
+    }
+
+    function pxToIn(px) {
+      return (px / 96).toFixed(2);
+    }
+
+    function inToPx(value) {
+      return Math.round(Number(value || 0) * 96);
+    }
+
+    function syncInspector(item = getItemByKey(selectedItemInput.value)) {
+      if (!item) return;
+      selectedItemInput.value = item.dataset.key;
+      xInput.value = pxToIn(parseFloat(item.style.left || 0));
+      yInput.value = pxToIn(parseFloat(item.style.top || 0));
+      widthInput.value = pxToIn(parseFloat(item.style.width || 0));
+      heightInput.value = pxToIn(parseFloat(item.style.height || 0));
+    }
+
+    function applyInspector() {
+      const item = getItemByKey(selectedItemInput.value);
+      if (!item) return;
+      item.style.left = `${Math.max(0, inToPx(xInput.value))}px`;
+      item.style.top = `${Math.max(0, inToPx(yInput.value))}px`;
+      item.style.width = `${Math.max(24, inToPx(widthInput.value))}px`;
+      item.style.height = `${Math.max(24, inToPx(heightInput.value))}px`;
+      setStatus(`${item.dataset.key}: x ${xInput.value}in, y ${yInput.value}in, w ${widthInput.value}in, h ${heightInput.value}in`);
+    }
+
+    function applyOrientation() {
+      layoutStage.classList.toggle('portrait', orientationInput.value === 'portrait');
+      buildRuler();
+      syncInspector();
+      setStatus(`Canvas orientation: ${orientationInput.value}.`);
     }
 
     function snap(value) {
@@ -595,6 +699,7 @@
     function activateItem(item) {
       document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
       item.classList.add('active');
+      syncInspector(item);
     }
 
     function pointerDown(e) {
@@ -627,13 +732,15 @@
         const top = Math.max(0, snap(dragState.startTop + dy));
         item.style.left = `${left}px`;
         item.style.top = `${top}px`;
-        setStatus(`${item.dataset.key}: x ${left}, y ${top}`);
+        syncInspector(item);
+        setStatus(`${item.dataset.key}: x ${pxToIn(left)}in, y ${pxToIn(top)}in`);
       } else {
         const width = Math.max(120, snap(dragState.startWidth + dx));
         const height = Math.max(36, snap(dragState.startHeight + dy));
         item.style.width = `${width}px`;
         item.style.height = `${height}px`;
-        setStatus(`${item.dataset.key}: w ${width}, h ${height}`);
+        syncInspector(item);
+        setStatus(`${item.dataset.key}: w ${pxToIn(width)}in, h ${pxToIn(height)}in`);
       }
     }
 
@@ -666,7 +773,10 @@
       setStatus('Layout reset.');
     }
 
-    document.getElementById('resetBtn').addEventListener('click', resetLayout);
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      resetLayout();
+      syncInspector();
+    });
     document.getElementById('printBtn').addEventListener('click', () => window.print());
 
     zoomInput.addEventListener('change', () => {
@@ -676,10 +786,16 @@
       setStatus(`Zoom set to ${Math.round(zoom * 100)}%.`);
     });
 
+    selectedItemInput.addEventListener('change', () => syncInspector());
+    [xInput, yInput, widthInput, heightInput].forEach(input => input.addEventListener('input', applyInspector));
+    orientationInput.addEventListener('change', applyOrientation);
+
     [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
 
     buildRuler();
     syncText();
+    activateItem(payeeItem);
+    applyOrientation();
   </script>
 </body>
 </html>
