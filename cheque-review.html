@@ -216,23 +216,6 @@
       justify-items: start;
     }
 
-    .layout-stage.portrait {
-      grid-template-columns: var(--ruler-size) var(--canvas-height);
-      grid-template-rows: var(--canvas-width) var(--ruler-size);
-    }
-
-    .layout-stage.portrait .ruler-y {
-      height: var(--canvas-width);
-    }
-
-    .layout-stage.portrait .ruler-x {
-      width: var(--canvas-height);
-    }
-
-    .layout-stage.portrait .page {
-      width: var(--canvas-height);
-      height: var(--canvas-width);
-    }
 
     .ruler {
       position: relative;
@@ -490,14 +473,6 @@
         </div>
       </div>
 
-      <div class="field">
-        <label for="orientationInput">Canvas orientation</label>
-        <select id="orientationInput">
-          <option value="landscape" selected>Landscape</option>
-          <option value="portrait">Portrait</option>
-        </select>
-      </div>
-
       <div class="actions">
         <button class="primary" id="printBtn">Print</button>
         <button class="secondary" id="resetBtn">Reset layout</button>
@@ -550,7 +525,6 @@
     const yInput = document.getElementById('yInput');
     const widthInput = document.getElementById('widthInput');
     const heightInput = document.getElementById('heightInput');
-    const orientationInput = document.getElementById('orientationInput');
     const page = document.getElementById('page');
     const layoutStage = document.querySelector('.layout-stage');
     const rulerX = document.getElementById('rulerX');
@@ -692,12 +666,6 @@
       setStatus(`${item.dataset.key}: x ${xInput.value}in, y ${yInput.value}in, w ${widthInput.value}in, h ${heightInput.value}in`);
     }
 
-    function applyOrientation() {
-      layoutStage.classList.toggle('portrait', orientationInput.value === 'portrait');
-      buildRuler();
-      syncInspector();
-      setStatus(`Canvas orientation: ${orientationInput.value}.`);
-    }
 
     function snap(value) {
       const step = Number(snapInput.value || 0);
@@ -808,14 +776,11 @@
 
     selectedItemInput.addEventListener('change', () => syncInspector());
     [xInput, yInput, widthInput, heightInput].forEach(input => input.addEventListener('input', applyInspector));
-    orientationInput.addEventListener('change', applyOrientation);
-
     [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
 
     buildRuler();
     syncText();
     activateItem(payeeItem);
-    applyOrientation();
   </script>
 </body>
 </html>
