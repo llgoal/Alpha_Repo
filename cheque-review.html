@@ -359,6 +359,7 @@
     .payee-item { font-size: 26px; font-weight: 500; }
     .amount-item { font-size: 28px; font-weight: 500; }
     .date-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.08em; }
+    .amount-number-item { font-size: 22px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; }
 
     .statusbar {
       margin-top: 14px;
@@ -435,14 +436,21 @@
         </div>
       </div>
 
-      <div class="triple-row">
+      <div class="row">
         <div class="field">
           <label for="payeeFontInput">Payee font</label>
           <input id="payeeFontInput" type="number" value="26" min="8" max="96" />
         </div>
         <div class="field">
-          <label for="amountFontInput">Amount font</label>
+          <label for="amountFontInput">Amount words font</label>
           <input id="amountFontInput" type="number" value="28" min="8" max="96" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="amountNumberFontInput">Amount number font</label>
+          <input id="amountNumberFontInput" type="number" value="22" min="8" max="96" />
         </div>
         <div class="field">
           <label for="dateFontInput">Date font</label>
@@ -455,6 +463,7 @@
         <select id="selectedItemInput">
           <option value="payee">Payee</option>
           <option value="amountWords">Amount in words</option>
+          <option value="amountNumber">Amount number</option>
           <option value="date">Date</option>
         </select>
       </div>
@@ -513,6 +522,7 @@
           <div class="page" id="page">
             <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 24px; top: 96px; width: 300px; height: 54px; font-size: 26px;">Sample Payee Name<div class="resize"></div></div>
             <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 24px; top: 192px; width: 420px; height: 86px; font-size: 28px;">One hundred twenty-three and 45/100<div class="resize"></div></div>
+            <div class="item amount-number-item" id="amountNumberItem" data-key="amountNumber" style="left: 456px; top: 96px; width: 160px; height: 44px; font-size: 22px;">123.45<div class="resize"></div></div>
             <div class="item date-item" id="dateItem" data-key="date" style="left: 456px; top: 24px; width: 180px; height: 42px; font-size: 20px;">02 04 2026<div class="resize"></div></div>
           </div>
           <div class="ruler-corner"></div>
@@ -534,6 +544,7 @@
     const payeeFontInput = document.getElementById('payeeFontInput');
     const amountFontInput = document.getElementById('amountFontInput');
     const dateFontInput = document.getElementById('dateFontInput');
+    const amountNumberFontInput = document.getElementById('amountNumberFontInput');
     const selectedItemInput = document.getElementById('selectedItemInput');
     const xInput = document.getElementById('xInput');
     const yInput = document.getElementById('yInput');
@@ -548,6 +559,7 @@
 
     const payeeItem = document.getElementById('payeeItem');
     const amountItem = document.getElementById('amountItem');
+    const amountNumberItem = document.getElementById('amountNumberItem');
     const dateItem = document.getElementById('dateItem');
 
     const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine'];
@@ -615,10 +627,12 @@
       const amountWords = formatAmountWords(amountInput.value);
       payeeItem.childNodes[0].nodeValue = payeeInput.value || ' ';
       amountItem.childNodes[0].nodeValue = amountWords;
+      amountNumberItem.childNodes[0].nodeValue = amountInput.value || ' ';
       dateItem.childNodes[0].nodeValue = dateInput.value || ' ';
       amountWordsInput.value = amountWords;
       payeeItem.style.fontSize = `${payeeFontInput.value || 26}px`;
       amountItem.style.fontSize = `${amountFontInput.value || 28}px`;
+      amountNumberItem.style.fontSize = `${amountNumberFontInput.value || 22}px`;
       dateItem.style.fontSize = `${dateFontInput.value || 20}px`;
     }
 
@@ -647,6 +661,7 @@
     function getItemByKey(key) {
       if (key === 'payee') return payeeItem;
       if (key === 'amountWords') return amountItem;
+      if (key === 'amountNumber') return amountNumberItem;
       return dateItem;
     }
 
@@ -748,7 +763,7 @@
       dragState = null;
     }
 
-    [payeeItem, amountItem, dateItem].forEach(item => {
+    [payeeItem, amountItem, amountNumberItem, dateItem].forEach(item => {
       item.addEventListener('pointerdown', pointerDown);
     });
 
@@ -765,6 +780,11 @@
       amountItem.style.top = '192px';
       amountItem.style.width = '420px';
       amountItem.style.height = '86px';
+
+      amountNumberItem.style.left = '456px';
+      amountNumberItem.style.top = '96px';
+      amountNumberItem.style.width = '160px';
+      amountNumberItem.style.height = '44px';
 
       dateItem.style.left = '456px';
       dateItem.style.top = '24px';
@@ -790,7 +810,7 @@
     [xInput, yInput, widthInput, heightInput].forEach(input => input.addEventListener('input', applyInspector));
     orientationInput.addEventListener('change', applyOrientation);
 
-    [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
+    [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
 
     buildRuler();
     syncText();
