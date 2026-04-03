@@ -17,6 +17,13 @@
       --accent-soft: rgba(75, 111, 255, 0.12);
       --paper: #ffffff;
       --shadow: 0 24px 60px rgba(42, 61, 102, 0.14);
+      --ppi: 96;
+      --canvas-width-in: 7.3333333333;
+      --canvas-height-in: 3.5;
+      --canvas-width: calc(var(--canvas-width-in) * var(--ppi) * 1px);
+      --canvas-height: calc(var(--canvas-height-in) * var(--ppi) * 1px);
+      --grid-cell: calc(1 * var(--ppi) * 1px);
+      --ruler-size: 44px;
     }
 
     * { box-sizing: border-box; }
@@ -202,8 +209,8 @@
       width: max-content;
       margin: 0 auto;
       display: grid;
-      grid-template-columns: 44px 816px;
-      grid-template-rows: 1056px 44px;
+      grid-template-columns: var(--ruler-size) var(--canvas-width);
+      grid-template-rows: var(--canvas-height) var(--ruler-size);
       gap: 0;
       align-items: start;
       justify-items: start;
@@ -220,34 +227,34 @@
     }
 
     .ruler-y {
-      width: 44px;
-      height: 1056px;
+      width: var(--ruler-size);
+      height: var(--canvas-height);
       border-right: 0;
       border-radius: 12px 0 0 12px;
       background-image: repeating-linear-gradient(
         to bottom,
         rgba(75,111,255,0.18) 0 1px,
-        transparent 1px 24px
+        transparent 1px var(--grid-cell)
       );
-      background-size: 100% 24px;
+      background-size: 100% var(--grid-cell);
     }
 
     .ruler-x {
-      width: 816px;
-      height: 44px;
+      width: var(--canvas-width);
+      height: var(--ruler-size);
       border-top: 0;
       border-radius: 0 0 12px 12px;
       background-image: repeating-linear-gradient(
         to right,
         rgba(75,111,255,0.18) 0 1px,
-        transparent 1px 24px
+        transparent 1px var(--grid-cell)
       );
-      background-size: 24px 100%;
+      background-size: var(--grid-cell) 100%;
     }
 
     .ruler-corner {
-      width: 44px;
-      height: 44px;
+      width: var(--ruler-size);
+      height: var(--ruler-size);
       border: 1px solid #d9e1ef;
       border-top: 0;
       border-right: 0;
@@ -275,8 +282,8 @@
 
     .page {
       position: relative;
-      width: 816px;
-      height: 1056px;
+      width: var(--canvas-width);
+      height: var(--canvas-height);
       margin: 0 auto;
       background: var(--paper);
       border: 1px solid #d9e1ef;
@@ -284,7 +291,7 @@
       background-image:
         linear-gradient(rgba(216,224,239,0.55) 1px, transparent 1px),
         linear-gradient(90deg, rgba(216,224,239,0.55) 1px, transparent 1px);
-      background-size: 24px 24px;
+      background-size: var(--grid-cell) var(--grid-cell);
       overflow: hidden;
     }
 
@@ -350,7 +357,7 @@
       .page { box-shadow: none; margin: 0; }
       .item { border-color: transparent !important; box-shadow: none !important; background: transparent; }
       .item .resize { display: none; }
-      @page { size: letter portrait; margin: 0.35in; }
+      @page { size: auto; margin: 0.35in; }
     }
 
     @media (max-width: 1120px) {
@@ -393,10 +400,9 @@
           <label for="snapInput">Grid snap</label>
           <select id="snapInput">
             <option value="0">Off</option>
-            <option value="4">4 px</option>
-            <option value="8" selected>8 px</option>
-            <option value="12">12 px</option>
-            <option value="24">24 px</option>
+            <option value="24">0.25 in</option>
+            <option value="48">0.5 in</option>
+            <option value="96" selected>1 in</option>
           </select>
         </div>
         <div class="field">
@@ -434,7 +440,8 @@
       <div class="help">
         - Drag any text block to move it.<br>
         - Drag the blue handle to resize the text box width/height.<br>
-        - The amount in words updates automatically from the numeric amount.
+        - The amount in words updates automatically from the numeric amount.<br>
+        - Grid cells are exactly <strong>1 inch</strong>, and the canvas is exactly <strong>7⅓ in × 3½ in</strong>.
       </div>
     </section>
 
@@ -447,9 +454,9 @@
         <div class="layout-stage">
           <div class="ruler ruler-y" id="rulerY"></div>
           <div class="page" id="page">
-            <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 96px; top: 180px; width: 420px; height: 54px; font-size: 26px;">Sample Payee Name<div class="resize"></div></div>
-            <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 96px; top: 262px; width: 520px; height: 86px; font-size: 28px;">One hundred twenty-three and 45/100<div class="resize"></div></div>
-            <div class="item date-item" id="dateItem" data-key="date" style="left: 540px; top: 110px; width: 180px; height: 42px; font-size: 20px;">02 04 2026<div class="resize"></div></div>
+            <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 24px; top: 96px; width: 300px; height: 54px; font-size: 26px;">Sample Payee Name<div class="resize"></div></div>
+            <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 24px; top: 192px; width: 420px; height: 86px; font-size: 28px;">One hundred twenty-three and 45/100<div class="resize"></div></div>
+            <div class="item date-item" id="dateItem" data-key="date" style="left: 456px; top: 24px; width: 180px; height: 42px; font-size: 20px;">02 04 2026<div class="resize"></div></div>
           </div>
           <div class="ruler-corner"></div>
           <div class="ruler ruler-x" id="rulerX"></div>
@@ -554,18 +561,21 @@
     function buildRuler() {
       rulerX.innerHTML = '';
       rulerY.innerHTML = '';
-      for (let x = 0; x <= 816; x += 48) {
+      const widthPx = page.offsetWidth;
+      const heightPx = page.offsetHeight;
+      const inchPx = 96;
+      for (let x = 0; x <= widthPx; x += inchPx) {
         const mark = document.createElement('div');
         mark.className = 'ruler-mark';
         mark.style.left = `${x}px`;
-        mark.textContent = x;
+        mark.textContent = (x / inchPx).toFixed(x === 0 ? 0 : 0) + '″';
         rulerX.appendChild(mark);
       }
-      for (let y = 0; y <= 1056; y += 48) {
+      for (let y = 0; y <= heightPx; y += inchPx) {
         const mark = document.createElement('div');
         mark.className = 'ruler-mark';
         mark.style.top = `${y}px`;
-        mark.textContent = y;
+        mark.textContent = (y / inchPx).toFixed(y === 0 ? 0 : 0) + '″';
         rulerY.appendChild(mark);
       }
     }
@@ -639,18 +649,18 @@
     window.addEventListener('pointerup', pointerUp);
 
     function resetLayout() {
-      payeeItem.style.left = '96px';
-      payeeItem.style.top = '180px';
-      payeeItem.style.width = '420px';
+      payeeItem.style.left = '24px';
+      payeeItem.style.top = '96px';
+      payeeItem.style.width = '300px';
       payeeItem.style.height = '54px';
 
-      amountItem.style.left = '96px';
-      amountItem.style.top = '262px';
-      amountItem.style.width = '520px';
+      amountItem.style.left = '24px';
+      amountItem.style.top = '192px';
+      amountItem.style.width = '420px';
       amountItem.style.height = '86px';
 
-      dateItem.style.left = '540px';
-      dateItem.style.top = '110px';
+      dateItem.style.left = '456px';
+      dateItem.style.top = '24px';
       dateItem.style.width = '180px';
       dateItem.style.height = '42px';
       setStatus('Layout reset.');
