@@ -478,13 +478,18 @@
       </div>
 
       <div class="field">
-        <label for="amountInput">Amount</label>
-        <input id="amountInput" type="text" value="One hundred twenty-three and 45/100" maxlength="68" />
+        <label for="amountInput">Amount number</label>
+        <input id="amountInput" type="text" value="123.45" maxlength="16" inputmode="decimal" />
       </div>
 
       <div class="field">
         <label for="dateInput">Date</label>
         <input id="dateInput" type="text" value="02 04 2026" maxlength="16" />
+      </div>
+
+      <div class="field">
+        <label>Amount in words</label>
+        <input id="amountWordsDisplay" type="text" value="One hundred twenty-three and 45/100" readonly />
       </div>
 
       <div class="actions">
@@ -493,7 +498,7 @@
       </div>
 
       <div class="meta">
-        Tip: type directly into the fields to test spacing. The right panel updates instantly.
+        Tip: enter a numeric amount like 123.45 and the amount-in-words line updates automatically.
       </div>
     </section>
 
@@ -508,7 +513,6 @@
           <div class="top-band"></div>
           <div class="security-text">This preview is for layout review only</div>
           <div class="serial">0396</div>
-          <div class="company">1974108 ONTARIO INC.</div>
           <div class="date-label">DATE</div>
           <div class="date-value" id="datePreview">02 04 2026</div>
 
@@ -523,12 +527,6 @@
           <div class="amount" id="amountPreview">One hundred twenty-three and 45</div>
           <div class="fraction">/ 100</div>
           <div class="dollars">DOLLARS</div>
-
-          <div class="bank">
-            TD CANADA TRUST<br />
-            5782 HIGHWAY 7<br />
-            MARKHAM, ON &nbsp; L3P 1A8
-          </div>
 
           <div class="for-label">FOR</div>
           <div class="per-label">PER</div>
@@ -552,16 +550,84 @@
     const payeePreview = document.getElementById('payeePreview');
     const amountPreview = document.getElementById('amountPreview');
     const datePreview = document.getElementById('datePreview');
+    const amountWordsDisplay = document.getElementById('amountWordsDisplay');
+
+    const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine'];
+    const TEENS = ['ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+    const TENS = ['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+
+    function underThousand(n) {
+      let parts = [];
+      if (n >= 100) {
+        parts.push(ONES[Math.floor(n / 100)] + ' hundred');
+        n = n % 100;
+      }
+      if (n >= 20) {
+        const tens = Math.floor(n / 10);
+        const ones = n % 10;
+        parts.push(TENS[tens] + (ones ? '-' + ONES[ones] : ''));
+      } else if (n >= 10) {
+        parts.push(TEENS[n - 10]);
+      } else if (n > 0) {
+        parts.push(ONES[n]);
+      }
+      return parts.join(' ');
+    }
+
+    function numberToWords(num) {
+      if (num === 0) return 'zero';
+      const groups = [
+        ['', 1],
+        ['thousand', 1000],
+        ['million', 1000000],
+        ['billion', 1000000000]
+      ];
+
+      let remaining = num;
+      let parts = [];
+
+      for (let i = groups.length - 1; i >= 0; i--) {
+        const [label, value] = groups[i];
+        const chunk = Math.floor(remaining / value);
+        if (chunk > 0) {
+          const text = underThousand(chunk);
+          parts.push(label ? `${text} ${label}` : text);
+          remaining = remaining % value;
+        }
+      }
+
+      return parts.join(' ');
+    }
+
+    function normalizeAmount(raw) {
+      const cleaned = (raw || '').replace(/[^\d.]/g, '');
+      if (!cleaned) return null;
+      const value = Number.parseFloat(cleaned);
+      if (!Number.isFinite(value)) return null;
+      return Math.max(0, value);
+    }
+
+    function formatWords(raw) {
+      const value = normalizeAmount(raw);
+      if (value === null) return 'Enter a valid numeric amount';
+
+      const dollars = Math.floor(value);
+      const cents = Math.round((value - dollars) * 100);
+      const words = numberToWords(dollars);
+      return `${words.charAt(0).toUpperCase() + words.slice(1)} and ${String(cents).padStart(2, '0')}/100`;
+    }
 
     function sync() {
+      const words = formatWords(amountInput.value);
       payeePreview.textContent = payeeInput.value || ' ';
-      amountPreview.textContent = amountInput.value || ' ';
+      amountPreview.textContent = words;
+      amountWordsDisplay.value = words;
       datePreview.textContent = dateInput.value || ' ';
     }
 
     function resetFields() {
       payeeInput.value = 'Sample Payee Name';
-      amountInput.value = 'One hundred twenty-three and 45/100';
+      amountInput.value = '123.45';
       dateInput.value = '02 04 2026';
       sync();
     }
