@@ -3,20 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Non-Negotiable Cheque Review</title>
+  <title>Payment Text Review</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
     :root {
       --bg: #eef3fb;
-      --panel: rgba(255,255,255,0.86);
+      --panel: rgba(255,255,255,0.9);
       --ink: #24324a;
       --muted: #66748d;
-      --line: #a7b6d6;
+      --line: #d4ddee;
       --accent: #4b6fff;
       --accent-soft: rgba(75, 111, 255, 0.12);
       --warning: #b42318;
-      --paper: #fffdf8;
+      --paper: #fffdfa;
       --shadow: 0 24px 60px rgba(42, 61, 102, 0.16);
     }
 
@@ -34,11 +34,11 @@
     }
 
     .app {
-      max-width: 1180px;
+      max-width: 1120px;
       margin: 0 auto;
       padding: 28px;
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: 360px minmax(0, 1fr);
       gap: 24px;
       align-items: start;
     }
@@ -46,14 +46,15 @@
     .panel {
       background: var(--panel);
       backdrop-filter: blur(16px);
-      border: 1px solid rgba(167, 182, 214, 0.6);
+      border: 1px solid rgba(167, 182, 214, 0.45);
       border-radius: 24px;
       box-shadow: var(--shadow);
     }
 
     .controls {
       padding: 24px;
-      position: static;
+      position: sticky;
+      top: 20px;
     }
 
     .eyebrow {
@@ -121,9 +122,9 @@
     }
 
     .field textarea {
-      min-height: 104px;
+      min-height: 110px;
       resize: vertical;
-      line-height: 1.5;
+      line-height: 1.55;
     }
 
     .field input:focus,
@@ -169,7 +170,7 @@
       font-size: 14px;
       font-weight: 700;
       cursor: pointer;
-      transition: transform .14s ease, box-shadow .14s ease, opacity .14s ease;
+      transition: transform .14s ease, box-shadow .14s ease;
     }
 
     button:hover { transform: translateY(-1px); }
@@ -194,11 +195,11 @@
       line-height: 1.6;
     }
 
-    .stage {
+    .preview-panel {
       padding: 24px;
     }
 
-    .stage-header {
+    .preview-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -206,7 +207,7 @@
       margin-bottom: 18px;
     }
 
-    .stage-title {
+    .preview-title {
       font-size: 16px;
       font-weight: 700;
       letter-spacing: 0.08em;
@@ -214,7 +215,7 @@
       color: var(--muted);
     }
 
-    .note-pill {
+    .pill {
       font-size: 12px;
       font-weight: 700;
       color: var(--warning);
@@ -227,169 +228,82 @@
     }
 
     .sheet-wrap {
-      overflow: auto;
       border-radius: 22px;
       background: linear-gradient(180deg, rgba(235,242,255,0.9), rgba(223,234,252,0.9));
-      padding: 10px;
-      border: 1px solid rgba(167, 182, 214, 0.5);
-      min-height: calc(100vh - 180px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      padding: 18px;
+      border: 1px solid rgba(167, 182, 214, 0.45);
     }
 
-    .rotated-stage {
-      width: 520px;
-      height: 1120px;
+    .sheet {
+      width: 100%;
+      max-width: 760px;
+      min-height: 980px;
       margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: visible;
-    }
-
-    .cheque {
+      background: var(--paper);
+      border: 1px solid #d8dfef;
+      box-shadow: 0 18px 36px rgba(51, 67, 103, 0.10);
+      padding: 54px 56px;
       position: relative;
-      width: 1080px;
-      height: 470px;
-      margin: 0;
-      transform: rotate(90deg) scale(0.96);
-      transform-origin: center center;
-      background:
-        linear-gradient(180deg, rgba(245, 247, 251, 0.85), rgba(255, 252, 245, 0.92)),
-        radial-gradient(circle at 30% 40%, rgba(201, 209, 231, 0.18), transparent 24%),
-        radial-gradient(circle at 60% 60%, rgba(229, 221, 196, 0.14), transparent 28%),
-        var(--paper);
-      border: 2px solid #8a97bc;
-      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.55), 0 20px 40px rgba(48, 63, 102, 0.15);
-      color: #27324a;
       overflow: hidden;
     }
 
-    .top-band {
-      position: absolute;
-      inset: 10px 12px auto 12px;
-      height: 13px;
-      background: repeating-linear-gradient(
-        90deg,
-        #4c5fa8 0 14px,
-        #c9a85b 14px 20px
-      );
-      border-radius: 2px;
-    }
-
-    .security-text {
-      position: absolute;
-      top: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(255,255,255,0.82);
-      padding: 1px 8px;
-      font-size: 9px;
-      letter-spacing: 0.06em;
-      color: #5f6781;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .serial,
-    .company,
-    .currency,
-    .bank,
-    .for-label,
-    .per-label,
-    .micr,
-    .fraction,
-    .dollars,
-    .date-label,
-    .pay-to-block {
-      display: none;
-    }
-
-    .date-value {
-      position: absolute;
-      top: 138px;
-      right: 114px;
-      width: 190px;
-      text-align: center;
-      font-size: 16px;
-      letter-spacing: 0.28em;
-      font-family: 'IBM Plex Mono', monospace;
-      color: #46506b;
-    }
-
-    .line {
-      position: absolute;
-      height: 0;
-      border-bottom: 2px solid #7a86a3;
-    }
-
-    .payee-line { top: 223px; left: 134px; width: 655px; }
-    .amount-line { top: 270px; left: 130px; width: 738px; }
-
-    .payee {
-      position: absolute;
-      top: 194px;
-      left: 142px;
-      width: 630px;
-      font-size: 25px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      letter-spacing: 0.01em;
-    }
-
-    .amount {
-      position: absolute;
-      top: 236px;
-      left: 142px;
-      width: 705px;
-      font-size: 25px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      letter-spacing: 0.01em;
-    }
-
-    .amount-number {
-      position: absolute;
-      top: 196px;
-      right: 106px;
-      width: 156px;
-      text-align: right;
-      font-size: 30px;
-      font-family: 'IBM Plex Mono', monospace;
-      color: #33405e;
-      letter-spacing: 0.02em;
-    }
-
-    .watermark {
+    .sheet::before {
+      content: 'NON-NEGOTIABLE';
       position: absolute;
       inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      pointer-events: none;
-      transform: rotate(-16deg);
-      font-size: 86px;
-      letter-spacing: 0.16em;
+      transform: rotate(-18deg);
+      font-size: 78px;
+      letter-spacing: 0.18em;
       font-weight: 700;
-      color: rgba(180, 35, 24, 0.13);
-      text-transform: uppercase;
+      color: rgba(180, 35, 24, 0.08);
+      pointer-events: none;
       user-select: none;
     }
 
-    .footer-note {
-      margin-top: 16px;
-      font-size: 13px;
+    .print-stack {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 34px;
+    }
+
+    .print-block {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 18px;
+    }
+
+    .print-label {
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
       color: var(--muted);
-      line-height: 1.5;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .print-value {
+      font-size: 31px;
+      line-height: 1.32;
+      color: var(--ink);
+      word-break: break-word;
+    }
+
+    .print-value.mono {
+      font-family: 'IBM Plex Mono', monospace;
+      letter-spacing: 0.08em;
+      font-size: 29px;
+    }
+
+    .print-value.amount-words {
+      font-size: 28px;
+      line-height: 1.45;
     }
 
     @media print {
-      body {
-        background: white;
-      }
+      body { background: white; }
 
       .app {
         display: block;
@@ -398,13 +312,13 @@
       }
 
       .controls,
-      .stage-header,
-      .footer-note {
+      .preview-header,
+      .meta {
         display: none !important;
       }
 
       .panel,
-      .stage,
+      .preview-panel,
       .sheet-wrap {
         box-shadow: none;
         border: 0;
@@ -412,44 +326,48 @@
         padding: 0;
       }
 
-      .rotated-stage {
-        width: auto;
-        height: auto;
-      }
-
-      .cheque {
+      .sheet {
         box-shadow: none;
-        margin: 0;
+        border: 0;
+        min-height: auto;
+        max-width: none;
+        width: 100%;
+        padding: 0.7in;
       }
 
       @page {
-        size: landscape;
+        size: auto;
         margin: 0.4in;
       }
     }
 
-    @media (max-width: 1180px) {
+    @media (max-width: 1080px) {
       .app {
-        padding: 20px;
+        grid-template-columns: 1fr;
       }
 
-      .sheet-wrap {
-        min-height: auto;
+      .controls {
+        position: static;
       }
     }
 
-    @media (max-width: 760px) {
-      .sheet-wrap {
-        padding: 8px;
+    @media (max-width: 720px) {
+      .app {
+        padding: 16px;
       }
 
-      .rotated-stage {
-        width: 420px;
-        height: 900px;
+      .sheet {
+        padding: 32px 24px;
+        min-height: 0;
       }
 
-      .cheque {
-        transform: rotate(90deg) scale(0.76);
+      .print-value {
+        font-size: 24px;
+      }
+
+      .print-value.amount-words,
+      .print-value.mono {
+        font-size: 22px;
       }
     }
   </style>
@@ -457,14 +375,14 @@
 <body>
   <div class="app">
     <section class="panel controls">
-      <div class="eyebrow">Review Template</div>
-      <h1>Non-negotiable text-only review</h1>
+      <div class="eyebrow">Safe Review Page</div>
+      <h1>Vertical text-only payment review</h1>
       <p class="intro">
-        This version only previews the three user inputs as text: payee name, numeric amount, and date. The amount in words is generated automatically for review.
+        This version removes the cheque-style alignment and only prints the entered text in a clean vertical layout for review.
       </p>
 
       <div class="warning">
-        This preview is intentionally watermarked <strong>NON-NEGOTIABLE</strong> and is only for safe visual review.
+        This page is a <strong>non-negotiable text review</strong>. It does not position text onto a cheque layout.
       </div>
 
       <div class="field">
@@ -484,7 +402,7 @@
 
       <div class="derived">
         <div class="derived-label">Amount in words</div>
-        <div class="derived-value" id="amountWordsPreviewText">One hundred twenty-three and 45/100</div>
+        <div class="derived-value" id="amountWordsInline">One hundred twenty-three and 45/100</div>
       </div>
 
       <div class="actions">
@@ -493,38 +411,40 @@
       </div>
 
       <div class="meta">
-        Enter a numeric amount like <strong>123.45</strong>. The page converts it to words automatically and only prints the text review layer.
+        Enter a numeric amount like <strong>123.45</strong>. The page converts it to words automatically and prints only a clean text sheet.
       </div>
     </section>
 
-    <section class="panel stage">
-      <div class="stage-header">
-        <div class="stage-title">Printable alignment review</div>
-        <div class="note-pill">Non-negotiable preview</div>
+    <section class="panel preview-panel">
+      <div class="preview-header">
+        <div class="preview-title">Printable vertical preview</div>
+        <div class="pill">Non-negotiable</div>
       </div>
 
       <div class="sheet-wrap">
-        <div class="rotated-stage">
-        <div class="cheque">
-          <div class="top-band"></div>
-          <div class="security-text">This preview is for layout review only</div>
+        <div class="sheet">
+          <div class="print-stack">
+            <div class="print-block">
+              <div class="print-label">Payee name</div>
+              <div class="print-value" id="payeePreview">Sample Payee Name</div>
+            </div>
 
-          <div class="date-value" id="datePreview">02 04 2026</div>
+            <div class="print-block">
+              <div class="print-label">Amount number</div>
+              <div class="print-value mono" id="amountNumberPreview">123.45</div>
+            </div>
 
-          <div class="line payee-line"></div>
-          <div class="line amount-line"></div>
+            <div class="print-block">
+              <div class="print-label">Amount in words</div>
+              <div class="print-value amount-words" id="amountWordsPreview">One hundred twenty-three and 45/100</div>
+            </div>
 
-          <div class="payee" id="payeePreview">Sample Payee Name</div>
-          <div class="amount" id="amountPreview">One hundred twenty-three and 45/100</div>
-          <div class="amount-number" id="amountNumberPreview">123.45</div>
-
-          <div class="watermark">Non-Negotiable</div>
+            <div class="print-block">
+              <div class="print-label">Date</div>
+              <div class="print-value mono" id="datePreview">02 04 2026</div>
+            </div>
+          </div>
         </div>
-        </div>
-      </div>
-
-      <div class="footer-note">
-        If you want, I can tune the text positions next — for example shifting just the payee, the date, or the amount words independently.
       </div>
     </section>
   </div>
@@ -535,10 +455,10 @@
     const dateInput = document.getElementById('dateInput');
 
     const payeePreview = document.getElementById('payeePreview');
-    const amountPreview = document.getElementById('amountPreview');
     const amountNumberPreview = document.getElementById('amountNumberPreview');
+    const amountWordsPreview = document.getElementById('amountWordsPreview');
+    const amountWordsInline = document.getElementById('amountWordsInline');
     const datePreview = document.getElementById('datePreview');
-    const amountWordsPreviewText = document.getElementById('amountWordsPreviewText');
 
     const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine'];
     const TEENS = ['ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
@@ -616,9 +536,9 @@
       const number = formatNumber(amountNumberInput.value);
 
       payeePreview.textContent = payeeInput.value || ' ';
-      amountPreview.textContent = words;
       amountNumberPreview.textContent = number;
-      amountWordsPreviewText.textContent = words;
+      amountWordsPreview.textContent = words;
+      amountWordsInline.textContent = words;
       datePreview.textContent = dateInput.value || ' ';
     }
 
