@@ -339,10 +339,10 @@
       cursor: nwse-resize;
     }
 
-    .payee-item { font-size: 26px; font-weight: 500; }
-    .amount-item { font-size: 28px; font-weight: 500; }
+    .payee-item { font-size: 20px; font-weight: 500; }
+    .amount-item { font-size: 20px; font-weight: 500; }
     .date-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.08em; }
-    .amount-number-item { font-size: 22px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; }
+    .amount-number-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; }
 
     .statusbar {
       margin-top: 14px;
@@ -422,18 +422,18 @@
       <div class="row">
         <div class="field">
           <label for="payeeFontInput">Payee font</label>
-          <input id="payeeFontInput" type="number" value="26" min="8" max="96" />
+          <input id="payeeFontInput" type="number" value="20" min="8" max="96" />
         </div>
         <div class="field">
           <label for="amountFontInput">Amount words font</label>
-          <input id="amountFontInput" type="number" value="28" min="8" max="96" />
+          <input id="amountFontInput" type="number" value="20" min="8" max="96" />
         </div>
       </div>
 
       <div class="row">
         <div class="field">
           <label for="amountNumberFontInput">Amount number font</label>
-          <input id="amountNumberFontInput" type="number" value="22" min="8" max="96" />
+          <input id="amountNumberFontInput" type="number" value="20" min="8" max="96" />
         </div>
         <div class="field">
           <label for="dateFontInput">Date font</label>
@@ -495,9 +495,9 @@
         <div class="layout-stage">
           <div class="ruler ruler-y" id="rulerY"></div>
           <div class="page" id="page">
-            <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 24px; top: 96px; width: 300px; height: 54px; font-size: 26px;">Sample Payee Name<div class="resize"></div></div>
-            <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 24px; top: 192px; width: 420px; height: 86px; font-size: 28px;">One hundred twenty-three and 45/100<div class="resize"></div></div>
-            <div class="item amount-number-item" id="amountNumberItem" data-key="amountNumber" style="left: 456px; top: 96px; width: 160px; height: 44px; font-size: 22px;">123.45<div class="resize"></div></div>
+            <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 24px; top: 96px; width: 300px; height: 54px; font-size: 20px;">Sample Payee Name<div class="resize"></div></div>
+            <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 24px; top: 192px; width: 420px; height: 86px; font-size: 20px;">One hundred twenty-three and 45/100<div class="resize"></div></div>
+            <div class="item amount-number-item" id="amountNumberItem" data-key="amountNumber" style="left: 456px; top: 96px; width: 160px; height: 44px; font-size: 20px;">123.45<div class="resize"></div></div>
             <div class="item date-item" id="dateItem" data-key="date" style="left: 456px; top: 24px; width: 180px; height: 42px; font-size: 20px;">02 04 2026<div class="resize"></div></div>
           </div>
           <div class="ruler-corner"></div>
@@ -604,9 +604,9 @@
       amountNumberItem.childNodes[0].nodeValue = amountInput.value || ' ';
       dateItem.childNodes[0].nodeValue = dateInput.value || ' ';
       amountWordsInput.value = amountWords;
-      payeeItem.style.fontSize = `${payeeFontInput.value || 26}px`;
-      amountItem.style.fontSize = `${amountFontInput.value || 28}px`;
-      amountNumberItem.style.fontSize = `${amountNumberFontInput.value || 22}px`;
+      payeeItem.style.fontSize = `${payeeFontInput.value || 20}px`;
+      amountItem.style.fontSize = `${amountFontInput.value || 20}px`;
+      amountNumberItem.style.fontSize = `${amountNumberFontInput.value || 20}px`;
       dateItem.style.fontSize = `${dateFontInput.value || 20}px`;
     }
 
