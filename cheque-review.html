@@ -339,9 +339,9 @@
       cursor: nwse-resize;
     }
 
-    .payee-item { font-size: 20px; font-weight: 500; }
-    .amount-item { font-size: 20px; font-weight: 500; }
-    .date-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.08em; }
+    .payee-item { font-size: 20px; font-weight: 400; }
+    .amount-item { font-size: 20px; font-weight: 400; }
+    .date-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
     .amount-number-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; }
 
     .statusbar {
@@ -361,7 +361,7 @@
       .page::before { content: none; }
       .item { border-color: transparent !important; box-shadow: none !important; background: transparent; }
       .item .resize { display: none; }
-      @page { size: auto; margin: 0.35in; }
+      @page { size: auto; margin: 0; }
     }
 
     @media (max-width: 1120px) {
@@ -599,12 +599,18 @@
       return `${words.charAt(0).toUpperCase() + words.slice(1)} and ${String(cents).padStart(2, '0')}/100`;
     }
 
+    function formatDate(raw) {
+      const digits = (raw || '').replace(/\D/g, '');
+      if (digits.length === 8) return digits;
+      return digits || raw || '';
+    }
+
     function syncText() {
       const amountWords = formatAmountWords(amountInput.value);
       payeeItem.childNodes[0].nodeValue = payeeInput.value || ' ';
       amountItem.childNodes[0].nodeValue = amountWords;
       amountNumberItem.childNodes[0].nodeValue = amountInput.value || ' ';
-      dateItem.childNodes[0].nodeValue = dateInput.value || ' ';
+      dateItem.childNodes[0].nodeValue = formatDate(dateInput.value) || ' ';
       amountWordsInput.value = amountWords;
       payeeItem.style.fontSize = `${payeeFontInput.value || 20}px`;
       amountItem.style.fontSize = `${amountFontInput.value || 20}px`;
