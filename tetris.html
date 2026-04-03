@@ -8,17 +8,17 @@
         @import url('https://fonts.googleapis.com/css2?family=Audiowide&family=IBM+Plex+Mono:wght@400;500;700&display=swap');
 
         :root {
-            --bg: #f6f8ff;
-            --panel: rgba(255, 255, 255, 0.80);
-            --panel-strong: rgba(248, 250, 255, 0.96);
-            --line: rgba(128, 147, 214, 0.32);
-            --glow: rgba(117, 168, 255, 0.22);
-            --cyan: #67c8ff;
-            --pink: #ff8cc8;
-            --gold: #ffcb70;
-            --text: #24324d;
-            --muted: #6f7fa3;
-            --shadow: 0 28px 80px rgba(110, 137, 189, 0.18);
+            --bg: #070b17;
+            --panel: rgba(8, 15, 34, 0.78);
+            --panel-strong: rgba(12, 19, 43, 0.94);
+            --line: rgba(110, 139, 255, 0.26);
+            --glow: rgba(77, 132, 255, 0.40);
+            --cyan: #72f4ff;
+            --pink: #ff6adf;
+            --gold: #ffd166;
+            --text: #ecf4ff;
+            --muted: #94a7cf;
+            --shadow: 0 28px 80px rgba(0, 0, 0, 0.52);
         }
 
         * {
@@ -36,10 +36,10 @@
             color: var(--text);
             font-family: 'IBM Plex Mono', monospace;
             background:
-                radial-gradient(circle at 15% 20%, rgba(103, 200, 255, 0.22), transparent 28%),
-                radial-gradient(circle at 85% 18%, rgba(255, 140, 200, 0.18), transparent 24%),
-                radial-gradient(circle at 50% 82%, rgba(255, 203, 112, 0.18), transparent 30%),
-                linear-gradient(180deg, #f8fbff 0%, #eef4ff 44%, #f9f6ff 100%);
+                radial-gradient(circle at 15% 20%, rgba(114, 244, 255, 0.18), transparent 28%),
+                radial-gradient(circle at 85% 18%, rgba(255, 106, 223, 0.16), transparent 24%),
+                radial-gradient(circle at 50% 82%, rgba(255, 209, 102, 0.12), transparent 30%),
+                linear-gradient(180deg, #050813 0%, #0a1020 40%, #05070f 100%);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -50,10 +50,10 @@
             position: fixed;
             inset: 0;
             background-image:
-                linear-gradient(rgba(151,172,220,0.10) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(151,172,220,0.10) 1px, transparent 1px);
+                linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
             background-size: 34px 34px;
-            opacity: .55;
+            opacity: .5;
             pointer-events: none;
         }
 
@@ -62,10 +62,10 @@
             position: fixed;
             inset: 0;
             pointer-events: none;
-            background: linear-gradient(transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
+            background: linear-gradient(transparent 0%, rgba(255,255,255,0.018) 50%, transparent 100%);
             background-size: 100% 6px;
-            mix-blend-mode: soft-light;
-            opacity: .16;
+            mix-blend-mode: screen;
+            opacity: .18;
         }
 
         .shell {
@@ -82,7 +82,7 @@
             border: 1px solid var(--line);
             border-radius: 28px;
             background: var(--panel);
-            box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.72);
+            box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.08);
             backdrop-filter: blur(18px);
         }
 
@@ -98,7 +98,7 @@
             inset: 0;
             border-radius: inherit;
             padding: 1px;
-            background: linear-gradient(135deg, rgba(103,200,255,0.40), rgba(255,140,200,0.24), rgba(255,203,112,0.28));
+            background: linear-gradient(135deg, rgba(114,244,255,0.45), rgba(255,106,223,0.25), rgba(255,209,102,0.22));
             -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
             -webkit-mask-composite: xor;
             mask-composite: exclude;
@@ -131,7 +131,7 @@
             font-size: clamp(28px, 4vw, 46px);
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            text-shadow: 0 0 16px rgba(103,200,255,0.18), 0 0 24px rgba(255,140,200,0.14);
+            text-shadow: 0 0 18px rgba(114,244,255,0.22), 0 0 28px rgba(255,106,223,0.18);
         }
 
         .subtitle {
@@ -144,8 +144,8 @@
         .status-pill {
             padding: 10px 14px;
             border-radius: 999px;
-            border: 1px solid rgba(103,200,255,0.32);
-            background: rgba(103,200,255,0.10);
+            border: 1px solid rgba(114,244,255,0.3);
+            background: rgba(114,244,255,0.08);
             color: var(--cyan);
             font-size: 12px;
             letter-spacing: 0.12em;
@@ -171,17 +171,17 @@
             border-radius: 24px;
             padding: 18px;
             background:
-                linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.56)),
-                linear-gradient(135deg, rgba(103,200,255,0.12), rgba(255,140,200,0.09));
-            border: 1px solid rgba(151, 171, 222, 0.28);
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.58), 0 24px 40px rgba(122,145,190,0.18);
+                linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)),
+                linear-gradient(135deg, rgba(114,244,255,0.08), rgba(255,106,223,0.06));
+            border: 1px solid rgba(122, 143, 255, 0.16);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 24px 40px rgba(0,0,0,0.32);
         }
 
         .board-glow {
             position: absolute;
             inset: 22px;
             border-radius: 18px;
-            background: radial-gradient(circle at 50% 0%, rgba(103,200,255,0.14), transparent 54%);
+            background: radial-gradient(circle at 50% 0%, rgba(114,244,255,0.08), transparent 50%);
             pointer-events: none;
         }
 
@@ -191,9 +191,9 @@
             height: auto;
             margin: 0 auto;
             border-radius: 18px;
-            border: 1px solid rgba(160, 178, 228, 0.36);
-            background: linear-gradient(180deg, rgba(248,251,255,0.98), rgba(233,240,255,0.98));
-            box-shadow: inset 0 0 24px rgba(103,200,255,0.08), 0 0 28px rgba(117,168,255,0.10);
+            border: 1px solid rgba(133, 153, 255, 0.18);
+            background: linear-gradient(180deg, rgba(10,16,32,0.95), rgba(6,10,22,0.95));
+            box-shadow: inset 0 0 24px rgba(114,244,255,0.06), 0 0 28px rgba(77,132,255,0.14);
         }
 
         .sidebar {
@@ -214,7 +214,7 @@
             border-radius: 20px;
             padding: 16px 18px;
             background: var(--panel-strong);
-            border: 1px solid rgba(151, 171, 222, 0.24);
+            border: 1px solid rgba(125, 149, 255, 0.16);
         }
 
         .stat-card::after {
@@ -224,7 +224,7 @@
             width: 120px;
             height: 120px;
             border-radius: 50%;
-            background: radial-gradient(circle, rgba(103,200,255,0.14), transparent 70%);
+            background: radial-gradient(circle, rgba(114,244,255,0.14), transparent 70%);
             pointer-events: none;
         }
 
@@ -245,8 +245,8 @@
         .hint,
         .mobile-controls {
             border-radius: 20px;
-            background: rgba(255, 255, 255, 0.74);
-            border: 1px solid rgba(151, 171, 222, 0.24);
+            background: rgba(9, 16, 36, 0.9);
+            border: 1px solid rgba(125, 149, 255, 0.16);
             padding: 16px 18px;
         }
 
@@ -261,9 +261,9 @@
             width: 120px;
             height: 120px;
             border-radius: 16px;
-            background: linear-gradient(180deg, rgba(248,251,255,0.98), rgba(237,243,255,0.98));
-            border: 1px solid rgba(103,200,255,0.18);
-            box-shadow: inset 0 0 18px rgba(103,200,255,0.06);
+            background: linear-gradient(180deg, rgba(8,12,24,0.98), rgba(6,10,18,0.98));
+            border: 1px solid rgba(114,244,255,0.16);
+            box-shadow: inset 0 0 18px rgba(114,244,255,0.06);
         }
 
         .hint h3,
@@ -307,21 +307,21 @@
             min-width: 72px;
             height: 58px;
             border-radius: 18px;
-            border: 1px solid rgba(103,200,255,0.22);
-            background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(238,244,255,0.95));
+            border: 1px solid rgba(114,244,255,0.22);
+            background: linear-gradient(180deg, rgba(19,29,61,0.95), rgba(11,18,39,0.95));
             color: var(--text);
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 22px;
             cursor: pointer;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.82), 0 8px 18px rgba(122,145,190,0.16);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 18px rgba(0,0,0,0.25);
             user-select: none;
         }
 
         .mobile-btn:active {
             transform: translateY(1px) scale(0.98);
-            box-shadow: inset 0 0 0 1px rgba(103,200,255,0.18), 0 6px 12px rgba(122,145,190,0.14);
+            box-shadow: inset 0 0 0 1px rgba(114,244,255,0.18), 0 6px 12px rgba(0,0,0,0.18);
         }
 
         .mobile-btn.wide {
@@ -334,7 +334,7 @@
             display: none;
             align-items: center;
             justify-content: center;
-            background: rgba(236, 242, 255, 0.72);
+            background: rgba(2, 6, 16, 0.76);
             backdrop-filter: blur(18px);
             z-index: 50;
             padding: 20px;
@@ -344,8 +344,8 @@
             width: min(420px, 92vw);
             border-radius: 28px;
             padding: 28px;
-            border: 1px solid rgba(255,255,255,0.62);
-            background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(241,246,255,0.98));
+            border: 1px solid rgba(255,255,255,0.08);
+            background: linear-gradient(180deg, rgba(11,16,34,0.96), rgba(8,12,24,0.96));
             box-shadow: var(--shadow);
             text-align: center;
         }
@@ -369,7 +369,7 @@
             border-radius: 18px;
             padding: 14px 18px;
             background: linear-gradient(90deg, var(--cyan), var(--pink));
-            color: #20304f;
+            color: #07111d;
             font-weight: 700;
             cursor: pointer;
             font-family: inherit;
@@ -532,7 +532,7 @@
                 <div class="brand">
                     <div class="eyebrow">Arcade Reactor</div>
                     <div class="title">Neon Grid</div>
-                    <div class="subtitle">A bright arcade-glass Tetris cabinet with airy gradients, pastel highlights, and a softer daytime glow.</div>
+                    <div class="subtitle">A retro-futurist Tetris cabinet with glossy glass panels, scanline atmosphere, and punchy arcade colors.</div>
                 </div>
                 <div class="status-pill" id="statusPill">Live Run</div>
             </div>
@@ -626,7 +626,7 @@
             [[0,1,1],[1,1,0]]
         ];
 
-        const COLORS = ['#67c8ff', '#ffcb70', '#9aa9ff', '#ff8cc8', '#8de7b5', '#ffab7a', '#71dccc'];
+        const COLORS = ['#72f4ff', '#ffd166', '#7c8dff', '#ff6adf', '#8bffb0', '#ff8a5b', '#6bf0c9'];
 
         let board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
         let current = null;
@@ -654,12 +654,12 @@
         function drawNextPiece() {
             nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
             const bg = nextCtx.createLinearGradient(0, 0, 0, nextCanvas.height);
-            bg.addColorStop(0, '#f8fbff');
-            bg.addColorStop(1, '#eef4ff');
+            bg.addColorStop(0, '#08101f');
+            bg.addColorStop(1, '#050912');
             nextCtx.fillStyle = bg;
             nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
 
-            nextCtx.strokeStyle = 'rgba(151, 172, 220, 0.26)';
+            nextCtx.strokeStyle = 'rgba(114, 244, 255, 0.08)';
             for (let i = 0; i <= 4; i++) {
                 const pos = i * 30;
                 nextCtx.beginPath();
@@ -691,7 +691,7 @@
                     grad.addColorStop(1, shadeColor(nextPiece.color, -18));
                     nextCtx.fillStyle = grad;
                     nextCtx.fillRect(px, py, block - 2, block - 2);
-                    nextCtx.fillStyle = 'rgba(255,255,255,0.55)';
+                    nextCtx.fillStyle = 'rgba(255,255,255,0.22)';
                     nextCtx.fillRect(px + 2, py + 2, block - 10, 4);
                 });
             });
@@ -705,9 +705,9 @@
             grad.addColorStop(1, shadeColor(color, -18));
             ctx.fillStyle = grad;
             ctx.fillRect(px, py, BLOCK - 1, BLOCK - 1);
-            ctx.fillStyle = 'rgba(255,255,255,0.55)';
+            ctx.fillStyle = 'rgba(255,255,255,0.22)';
             ctx.fillRect(px + 2, py + 2, BLOCK - 8, 4);
-            ctx.fillStyle = 'rgba(110,130,180,0.18)';
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
             ctx.fillRect(px + BLOCK - 5, py + 4, 3, BLOCK - 8);
             ctx.fillRect(px + 4, py + BLOCK - 5, BLOCK - 8, 3);
         }
@@ -722,7 +722,7 @@
         }
 
         function drawGrid() {
-            ctx.strokeStyle = 'rgba(151, 172, 220, 0.24)';
+            ctx.strokeStyle = 'rgba(114, 244, 255, 0.07)';
             ctx.lineWidth = 1;
             for (let x = 0; x <= COLS; x++) {
                 ctx.beginPath();
@@ -740,8 +740,8 @@
 
         function draw() {
             const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            bg.addColorStop(0, '#f8fbff');
-            bg.addColorStop(1, '#edf3ff');
+            bg.addColorStop(0, '#08101f');
+            bg.addColorStop(1, '#050912');
             ctx.fillStyle = bg;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             drawGrid();
