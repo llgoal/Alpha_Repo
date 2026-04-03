@@ -38,7 +38,7 @@
       margin: 0 auto;
       padding: 28px;
       display: grid;
-      grid-template-columns: 360px minmax(0, 1fr);
+      grid-template-columns: 380px minmax(0, 1fr);
       gap: 24px;
       align-items: start;
     }
@@ -107,7 +107,8 @@
       font-weight: 700;
     }
 
-    .field input {
+    .field input,
+    .field textarea {
       width: 100%;
       border: 1px solid #c3cfe6;
       border-radius: 14px;
@@ -117,11 +118,42 @@
       background: rgba(255,255,255,0.96);
       outline: none;
       transition: border-color .18s ease, box-shadow .18s ease;
+      font-family: inherit;
     }
 
-    .field input:focus {
+    .field textarea {
+      min-height: 104px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .field input:focus,
+    .field textarea:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+
+    .derived {
+      border-radius: 16px;
+      background: rgba(75,111,255,0.06);
+      border: 1px solid rgba(75,111,255,0.12);
+      padding: 14px 16px;
+      margin-top: 6px;
+    }
+
+    .derived-label {
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .derived-value {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--ink);
     }
 
     .actions {
@@ -245,54 +277,30 @@
       text-transform: uppercase;
     }
 
-    .serial {
-      position: absolute;
-      top: 36px;
-      right: 26px;
-      font-size: 27px;
-      letter-spacing: 0.06em;
-      color: #4b556e;
-      font-family: 'IBM Plex Mono', monospace;
-    }
-
-    .company {
-      position: absolute;
-      top: 98px;
-      left: 194px;
-      font-size: 18px;
-      letter-spacing: 0.02em;
-      font-weight: 500;
-    }
-
-    .date-label {
-      position: absolute;
-      top: 112px;
-      right: 182px;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
+    .serial,
+    .company,
+    .currency,
+    .bank,
+    .for-label,
+    .per-label,
+    .micr,
+    .fraction,
+    .dollars,
+    .date-label,
+    .pay-to-block {
+      display: none;
     }
 
     .date-value {
       position: absolute;
-      top: 136px;
-      right: 118px;
+      top: 138px;
+      right: 114px;
       width: 190px;
       text-align: center;
       font-size: 16px;
       letter-spacing: 0.28em;
       font-family: 'IBM Plex Mono', monospace;
       color: #46506b;
-    }
-
-    .pay-to-block {
-      position: absolute;
-      top: 176px;
-      left: 36px;
-      width: 96px;
-      font-size: 16px;
-      line-height: 1.15;
-      font-weight: 500;
     }
 
     .line {
@@ -303,8 +311,6 @@
 
     .payee-line { top: 223px; left: 134px; width: 655px; }
     .amount-line { top: 270px; left: 130px; width: 738px; }
-    .for-line { top: 395px; left: 36px; width: 490px; }
-    .per-line { top: 395px; left: 636px; width: 386px; }
 
     .payee {
       position: absolute;
@@ -316,14 +322,6 @@
       overflow: hidden;
       text-overflow: ellipsis;
       letter-spacing: 0.01em;
-    }
-
-    .currency {
-      position: absolute;
-      top: 198px;
-      right: 250px;
-      font-size: 38px;
-      font-weight: 600;
     }
 
     .amount {
@@ -338,54 +336,16 @@
       letter-spacing: 0.01em;
     }
 
-    .fraction {
+    .amount-number {
       position: absolute;
-      top: 246px;
-      right: 176px;
-      font-size: 14px;
-      font-weight: 600;
-      color: #48516b;
-    }
-
-    .dollars {
-      position: absolute;
-      top: 244px;
-      right: 74px;
-      font-size: 16px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-    }
-
-    .bank {
-      position: absolute;
-      top: 290px;
-      left: 42px;
-      font-size: 15px;
-      line-height: 1.35;
-      color: #39445d;
-    }
-
-    .for-label,
-    .per-label {
-      position: absolute;
-      top: 378px;
-      font-size: 16px;
-      font-weight: 500;
-    }
-
-    .for-label { left: 36px; }
-    .per-label { left: 600px; }
-
-    .micr {
-      position: absolute;
-      left: 92px;
-      right: 90px;
-      bottom: 28px;
-      text-align: center;
+      top: 196px;
+      right: 106px;
+      width: 156px;
+      text-align: right;
+      font-size: 30px;
       font-family: 'IBM Plex Mono', monospace;
-      font-size: 19px;
-      letter-spacing: 0.13em;
-      color: #2f3853;
+      color: #33405e;
+      letter-spacing: 0.02em;
     }
 
     .watermark {
@@ -463,13 +423,13 @@
   <div class="app">
     <section class="panel controls">
       <div class="eyebrow">Review Template</div>
-      <h1>Non-Negotiable cheque-style review</h1>
+      <h1>Non-negotiable text-only review</h1>
       <p class="intro">
-        Use this to preview text spacing and visual layout only. It is clearly marked non-negotiable and is meant for design review, not for payment use.
+        This version only previews the three user inputs as text: payee name, numeric amount, and date. The amount in words is generated automatically for review.
       </p>
 
       <div class="warning">
-        This preview is intentionally watermarked <strong>NON-NEGOTIABLE</strong> and should only be used as a mockup or internal review artifact.
+        This preview is intentionally watermarked <strong>NON-NEGOTIABLE</strong> and is only for safe visual review.
       </div>
 
       <div class="field">
@@ -478,13 +438,18 @@
       </div>
 
       <div class="field">
-        <label for="amountInput">Amount</label>
-        <input id="amountInput" type="text" value="One hundred twenty-three and 45/100" maxlength="68" />
+        <label for="amountNumberInput">Amount number</label>
+        <input id="amountNumberInput" type="text" value="123.45" maxlength="16" inputmode="decimal" />
       </div>
 
       <div class="field">
         <label for="dateInput">Date</label>
         <input id="dateInput" type="text" value="02 04 2026" maxlength="16" />
+      </div>
+
+      <div class="derived">
+        <div class="derived-label">Amount in words</div>
+        <div class="derived-value" id="amountWordsPreviewText">One hundred twenty-three and 45/100</div>
       </div>
 
       <div class="actions">
@@ -493,7 +458,7 @@
       </div>
 
       <div class="meta">
-        Tip: type directly into the fields to test spacing. The right panel updates instantly.
+        Enter a numeric amount like <strong>123.45</strong>. The page converts it to words automatically and only prints the text review layer.
       </div>
     </section>
 
@@ -507,66 +472,127 @@
         <div class="cheque">
           <div class="top-band"></div>
           <div class="security-text">This preview is for layout review only</div>
-          <div class="serial">0396</div>
-          <div class="company">1974108 ONTARIO INC.</div>
-          <div class="date-label">DATE</div>
+
           <div class="date-value" id="datePreview">02 04 2026</div>
 
-          <div class="pay-to-block">PAY<br />TO THE<br />ORDER OF</div>
           <div class="line payee-line"></div>
           <div class="line amount-line"></div>
-          <div class="line for-line"></div>
-          <div class="line per-line"></div>
 
           <div class="payee" id="payeePreview">Sample Payee Name</div>
-          <div class="currency">$</div>
-          <div class="amount" id="amountPreview">One hundred twenty-three and 45</div>
-          <div class="fraction">/ 100</div>
-          <div class="dollars">DOLLARS</div>
+          <div class="amount" id="amountPreview">One hundred twenty-three and 45/100</div>
+          <div class="amount-number" id="amountNumberPreview">123.45</div>
 
-          <div class="bank">
-            TD CANADA TRUST<br />
-            5782 HIGHWAY 7<br />
-            MARKHAM, ON &nbsp; L3P 1A8
-          </div>
-
-          <div class="for-label">FOR</div>
-          <div class="per-label">PER</div>
-
-          <div class="micr">0000396 19962 004 0625 5221334</div>
           <div class="watermark">Non-Negotiable</div>
         </div>
       </div>
 
       <div class="footer-note">
-        If you want, I can tune the preview spacing next — for example moving the payee line slightly left/right, raising the date, or tightening the amount field for a closer visual review.
+        If you want, I can tune the text positions next — for example shifting just the payee, the date, or the amount words independently.
       </div>
     </section>
   </div>
 
   <script>
     const payeeInput = document.getElementById('payeeInput');
-    const amountInput = document.getElementById('amountInput');
+    const amountNumberInput = document.getElementById('amountNumberInput');
     const dateInput = document.getElementById('dateInput');
 
     const payeePreview = document.getElementById('payeePreview');
     const amountPreview = document.getElementById('amountPreview');
+    const amountNumberPreview = document.getElementById('amountNumberPreview');
     const datePreview = document.getElementById('datePreview');
+    const amountWordsPreviewText = document.getElementById('amountWordsPreviewText');
+
+    const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine'];
+    const TEENS = ['ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+    const TENS = ['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+
+    function underThousand(n) {
+      let parts = [];
+      if (n >= 100) {
+        parts.push(ONES[Math.floor(n / 100)] + ' hundred');
+        n = n % 100;
+      }
+      if (n >= 20) {
+        const tens = Math.floor(n / 10);
+        const ones = n % 10;
+        parts.push(TENS[tens] + (ones ? '-' + ONES[ones] : ''));
+      } else if (n >= 10) {
+        parts.push(TEENS[n - 10]);
+      } else if (n > 0) {
+        parts.push(ONES[n]);
+      }
+      return parts.join(' ');
+    }
+
+    function numberToWords(num) {
+      if (num === 0) return 'zero';
+      const groups = [
+        ['', 1],
+        ['thousand', 1000],
+        ['million', 1000000],
+        ['billion', 1000000000]
+      ];
+
+      let remaining = num;
+      let parts = [];
+
+      for (let i = groups.length - 1; i >= 0; i--) {
+        const [label, value] = groups[i];
+        const chunk = Math.floor(remaining / value);
+        if (chunk > 0) {
+          const text = underThousand(chunk);
+          parts.push(label ? `${text} ${label}` : text);
+          remaining = remaining % value;
+        }
+      }
+
+      return parts.join(' ');
+    }
+
+    function normalizeAmount(raw) {
+      const cleaned = (raw || '').replace(/[^\d.]/g, '');
+      if (!cleaned) return null;
+      const value = Number.parseFloat(cleaned);
+      if (!Number.isFinite(value)) return null;
+      return Math.max(0, value);
+    }
+
+    function formatWords(raw) {
+      const value = normalizeAmount(raw);
+      if (value === null) return 'Enter a valid numeric amount';
+
+      const dollars = Math.floor(value);
+      const cents = Math.round((value - dollars) * 100);
+      const words = numberToWords(dollars);
+      return `${words.charAt(0).toUpperCase() + words.slice(1)} and ${String(cents).padStart(2, '0')}/100`;
+    }
+
+    function formatNumber(raw) {
+      const value = normalizeAmount(raw);
+      if (value === null) return '';
+      return value.toFixed(2);
+    }
 
     function sync() {
+      const words = formatWords(amountNumberInput.value);
+      const number = formatNumber(amountNumberInput.value);
+
       payeePreview.textContent = payeeInput.value || ' ';
-      amountPreview.textContent = amountInput.value || ' ';
+      amountPreview.textContent = words;
+      amountNumberPreview.textContent = number;
+      amountWordsPreviewText.textContent = words;
       datePreview.textContent = dateInput.value || ' ';
     }
 
     function resetFields() {
       payeeInput.value = 'Sample Payee Name';
-      amountInput.value = 'One hundred twenty-three and 45/100';
+      amountNumberInput.value = '123.45';
       dateInput.value = '02 04 2026';
       sync();
     }
 
-    [payeeInput, amountInput, dateInput].forEach(input => {
+    [payeeInput, amountNumberInput, dateInput].forEach(input => {
       input.addEventListener('input', sync);
     });
 
