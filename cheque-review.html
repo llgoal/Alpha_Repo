@@ -34,11 +34,11 @@
     }
 
     .app {
-      max-width: 1400px;
+      max-width: 1180px;
       margin: 0 auto;
       padding: 28px;
       display: grid;
-      grid-template-columns: 380px minmax(0, 1fr);
+      grid-template-columns: 1fr;
       gap: 24px;
       align-items: start;
     }
@@ -53,8 +53,7 @@
 
     .controls {
       padding: 24px;
-      position: sticky;
-      top: 20px;
+      position: static;
     }
 
     .eyebrow {
@@ -410,11 +409,7 @@
 
     @media (max-width: 1180px) {
       .app {
-        grid-template-columns: 1fr;
-      }
-
-      .controls {
-        position: static;
+        padding: 20px;
       }
     }
   </style>
