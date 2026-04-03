@@ -314,13 +314,14 @@
       min-width: 120px;
       min-height: 36px;
       padding: 8px 10px;
-      border: 1px dashed transparent;
+      border: 1px dashed rgba(75,111,255,0.28);
       border-radius: 10px;
-      cursor: move;
+      cursor: default;
       user-select: none;
       white-space: pre-wrap;
       word-break: break-word;
-      background: rgba(255,255,255,0.72);
+      background: rgba(255,255,255,0.52);
+      box-shadow: inset 0 0 0 1px rgba(75,111,255,0.08);
     }
 
     .item.active {
@@ -329,14 +330,7 @@
     }
 
     .item .resize {
-      position: absolute;
-      width: 12px;
-      height: 12px;
-      right: -6px;
-      bottom: -6px;
-      border-radius: 50%;
-      background: #4b6fff;
-      cursor: nwse-resize;
+      display: none;
     }
 
     .payee-item { font-size: 16px; font-weight: 400; }
@@ -481,9 +475,9 @@
       </div>
 
       <div class="help">
-        - Drag any text block to move it.<br>
-        - Drag the blue handle to resize the text box width/height.<br>
-        - You can also set exact X/Y and width/height in inches.<br>
+        - Canvas drag/drop is disabled.<br>
+        - Use the side panel only to adjust X/Y, width/height, and font sizes.<br>
+        - Canvas highlights are for on-screen placement only and do not print.<br>
         - Grid cells are exactly <strong>1 inch</strong>, and the canvas is exactly <strong>7.5 in × 3.5 in</strong>.
       </div>
     </section>
@@ -685,67 +679,15 @@
       statusbar.textContent = text;
     }
 
-    let dragState = null;
-
     function activateItem(item) {
       document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
       item.classList.add('active');
       syncInspector(item);
     }
 
-    function pointerDown(e) {
-      const item = e.currentTarget;
-      const isResize = e.target.classList.contains('resize');
-      activateItem(item);
-      const rect = item.getBoundingClientRect();
-      const pageRect = page.getBoundingClientRect();
-      dragState = {
-        item,
-        mode: isResize ? 'resize' : 'move',
-        startX: e.clientX,
-        startY: e.clientY,
-        startLeft: rect.left - pageRect.left,
-        startTop: rect.top - pageRect.top,
-        startWidth: rect.width,
-        startHeight: rect.height
-      };
-      item.setPointerCapture?.(e.pointerId);
-    }
-
-    function pointerMove(e) {
-      if (!dragState) return;
-      const dx = e.clientX - dragState.startX;
-      const dy = e.clientY - dragState.startY;
-      const item = dragState.item;
-
-      if (dragState.mode === 'move') {
-        const left = Math.max(0, snap(dragState.startLeft + dx));
-        const top = Math.max(0, snap(dragState.startTop + dy));
-        item.style.left = `${left}px`;
-        item.style.top = `${top}px`;
-        syncInspector(item);
-        setStatus(`${item.dataset.key}: x ${pxToIn(left)}in, y ${pxToIn(top)}in`);
-      } else {
-        const width = Math.max(120, snap(dragState.startWidth + dx));
-        const height = Math.max(36, snap(dragState.startHeight + dy));
-        item.style.width = `${width}px`;
-        item.style.height = `${height}px`;
-        syncInspector(item);
-        setStatus(`${item.dataset.key}: w ${pxToIn(width)}in, h ${pxToIn(height)}in`);
-      }
-    }
-
-    function pointerUp() {
-      dragState = null;
-    }
-
     [payeeItem, amountItem, amountNumberItem, dateItem].forEach(item => {
-      item.addEventListener('pointerdown', pointerDown);
+      item.addEventListener('click', () => activateItem(item));
     });
-
-    window.addEventListener('pointermove', pointerMove);
-    window.addEventListener('pointerup', pointerUp);
-
     function resetLayout() {
       payeeItem.style.left = '96px';
       payeeItem.style.top = '110px';
