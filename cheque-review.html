@@ -337,6 +337,7 @@
     .amount-item { font-size: 16px; font-weight: 400; }
     .date-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
     .amount-number-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; }
+    .month-text-item { font-size: 16px; font-weight: 400; }
 
     .statusbar {
       margin-top: 14px;
@@ -438,10 +439,16 @@
       </div>
 
       <div class="field">
+        <label for="monthTextFontInput">Month text font</label>
+        <input id="monthTextFontInput" type="number" value="16" min="8" max="96" />
+      </div>
+
+      <div class="field">
         <label for="selectedItemInput">Selected block</label>
         <select id="selectedItemInput">
           <option value="payee">Payee</option>
           <option value="amountWords">Amount in words</option>
+          <option value="monthText">Month text</option>
           <option value="amountNumber">Amount number</option>
           <option value="date">Date</option>
         </select>
@@ -493,8 +500,9 @@
           <div class="page" id="page">
             <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 96px; top: 110px; width: 300px; height: 42px; font-size: 16px;">Sample Payee Name<div class="resize"></div></div>
             <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 48px; top: 144px; width: 528px; height: 42px; font-size: 16px;">Two thousand three hundred forty-five and 67/100<div class="resize"></div></div>
+            <div class="item month-text-item" id="monthTextItem" data-key="monthText" style="left: 48px; top: 194px; width: 200px; height: 32px; font-size: 16px;">April<div class="resize"></div></div>
             <div class="item amount-number-item" id="amountNumberItem" data-key="amountNumber" style="left: 533px; top: 120px; width: 160px; height: 44px; font-size: 20px;">2345.67<div class="resize"></div></div>
-            <div class="item date-item" id="dateItem" data-key="date" style="left: 538px; top: 58px; width: 180px; height: 42px; font-size: 20px;">02 04 2026<div class="resize"></div></div>
+            <div class="item date-item" id="dateItem" data-key="date" style="left: 538px; top: 58px; width: 180px; height: 42px; font-size: 20px;">02042026<div class="resize"></div></div>
           </div>
           <div class="ruler-corner"></div>
           <div class="ruler ruler-x" id="rulerX"></div>
@@ -516,6 +524,7 @@
     const amountFontInput = document.getElementById('amountFontInput');
     const dateFontInput = document.getElementById('dateFontInput');
     const amountNumberFontInput = document.getElementById('amountNumberFontInput');
+    const monthTextFontInput = document.getElementById('monthTextFontInput');
     const selectedItemInput = document.getElementById('selectedItemInput');
     const xInput = document.getElementById('xInput');
     const yInput = document.getElementById('yInput');
@@ -529,6 +538,7 @@
 
     const payeeItem = document.getElementById('payeeItem');
     const amountItem = document.getElementById('amountItem');
+    const monthTextItem = document.getElementById('monthTextItem');
     const amountNumberItem = document.getElementById('amountNumberItem');
     const dateItem = document.getElementById('dateItem');
 
@@ -599,15 +609,25 @@
       return digits || raw || '';
     }
 
+    function formatMonthText(raw) {
+      const digits = (raw || '').replace(/\D/g, '');
+      if (digits.length < 4) return '';
+      const month = Number(digits.slice(2, 4));
+      const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      return names[month - 1] || '';
+    }
+
     function syncText() {
       const amountWords = formatAmountWords(amountInput.value);
       payeeItem.childNodes[0].nodeValue = payeeInput.value || ' ';
       amountItem.childNodes[0].nodeValue = amountWords;
+      monthTextItem.childNodes[0].nodeValue = formatMonthText(dateInput.value) || ' ';
       amountNumberItem.childNodes[0].nodeValue = amountInput.value || ' ';
       dateItem.childNodes[0].nodeValue = formatDate(dateInput.value) || ' ';
       amountWordsInput.value = amountWords;
       payeeItem.style.fontSize = `${payeeFontInput.value || 16}px`;
       amountItem.style.fontSize = `${amountFontInput.value || 16}px`;
+      monthTextItem.style.fontSize = `${monthTextFontInput.value || 16}px`;
       amountNumberItem.style.fontSize = `${amountNumberFontInput.value || 20}px`;
       dateItem.style.fontSize = `${dateFontInput.value || 20}px`;
     }
@@ -637,6 +657,7 @@
     function getItemByKey(key) {
       if (key === 'payee') return payeeItem;
       if (key === 'amountWords') return amountItem;
+      if (key === 'monthText') return monthTextItem;
       if (key === 'amountNumber') return amountNumberItem;
       return dateItem;
     }
@@ -685,7 +706,7 @@
       syncInspector(item);
     }
 
-    [payeeItem, amountItem, amountNumberItem, dateItem].forEach(item => {
+    [payeeItem, amountItem, monthTextItem, amountNumberItem, dateItem].forEach(item => {
       item.addEventListener('click', () => activateItem(item));
     });
     function resetLayout() {
@@ -698,6 +719,11 @@
       amountItem.style.top = '144px';
       amountItem.style.width = '528px';
       amountItem.style.height = '42px';
+
+      monthTextItem.style.left = '48px';
+      monthTextItem.style.top = '194px';
+      monthTextItem.style.width = '200px';
+      monthTextItem.style.height = '32px';
 
       amountNumberItem.style.left = '533px';
       amountNumberItem.style.top = '120px';
@@ -726,7 +752,7 @@
 
     selectedItemInput.addEventListener('change', () => syncInspector());
     [xInput, yInput, widthInput, heightInput].forEach(input => input.addEventListener('input', applyInspector));
-    [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
+    [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, monthTextFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
 
     buildRuler();
     syncText();
