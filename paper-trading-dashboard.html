@@ -254,6 +254,7 @@
     .pill.stock { color: var(--cyan); }
     .pill.crypto { color: var(--gold); }
     .pill.watch { color: #c8d5f5; }
+    .pill.candidate { color: #ffb86b; }
 
     .hint {
       margin-top: 14px;
@@ -406,6 +407,21 @@
         </div>
 
         <div class="panel" style="padding:16px; background: rgba(255,255,255,0.02); margin-top:16px;">
+          <h2>Research candidates</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Type</th>
+                <th>Tag</th>
+                <th>Why watch</th>
+              </tr>
+            </thead>
+            <tbody id="candidatesBody"></tbody>
+          </table>
+        </div>
+
+        <div class="panel" style="padding:16px; background: rgba(255,255,255,0.02); margin-top:16px;">
           <h2>Trade log</h2>
           <table>
             <thead>
@@ -433,6 +449,7 @@
       cash: STARTING_CAPITAL,
       trades: [],
       watchlist: [],
+      candidates: [],
       positions: {}
     };
 
@@ -453,6 +470,7 @@
       equityValue: document.getElementById('equityValue'),
       positionsBody: document.getElementById('positionsBody'),
       watchlistBody: document.getElementById('watchlistBody'),
+      candidatesBody: document.getElementById('candidatesBody'),
       tradesBody: document.getElementById('tradesBody')
     };
 
@@ -541,6 +559,18 @@
         els.watchlistBody.appendChild(tr);
       });
 
+      els.candidatesBody.innerHTML = '';
+      state.candidates.slice(0, 12).forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${item.symbol}</td>
+          <td><span class="pill ${item.type}">${item.type}</span></td>
+          <td><span class="pill candidate">${item.tag || 'candidate'}</span></td>
+          <td>${item.thesis || ''}</td>
+        `;
+        els.candidatesBody.appendChild(tr);
+      });
+
       els.tradesBody.innerHTML = '';
       state.trades.slice(0, 20).forEach(t => {
         const tr = document.createElement('tr');
@@ -581,6 +611,12 @@
     state.watchlist = [
       { symbol: 'QQQ', type: 'stock', tag: 'macro', thesis: 'Track growth / rates regime and leadership breadth.', date: '2026-04-04' },
       { symbol: 'BTC', type: 'crypto', tag: 'momentum', thesis: 'Watch for crypto-beta spillover and headline sensitivity.', date: '2026-04-04' }
+    ];
+
+    state.candidates = [
+      { symbol: 'NVDA', type: 'stock', tag: 'event-driven', thesis: 'AI leadership and sentiment sensitivity; watch for narrative acceleration or reversal.' },
+      { symbol: 'ETH', type: 'crypto', tag: 'high-vol', thesis: 'Crypto-beta and positioning proxy; useful when sentiment shifts faster than majors.' },
+      { symbol: 'PLTR', type: 'stock', tag: 'attention', thesis: 'Retail attention and momentum crowding can create exaggerated moves worth tracking.' }
     ];
     render();
   </script>
