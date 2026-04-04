@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Paper Trading Dashboard</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap');
+
+    :root {
+      --bg: #08111f;
+      --panel: rgba(10, 20, 38, 0.84);
+      --panel-strong: rgba(13, 24, 45, 0.94);
+      --line: rgba(124, 156, 255, 0.18);
+      --text: #eaf2ff;
+      --muted: #8ea1c8;
+      --green: #59d69c;
+      --red: #ff7b8f;
+      --gold: #ffd166;
+      --cyan: #74dfff;
+      --shadow: 0 24px 70px rgba(0,0,0,0.38);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'IBM Plex Sans', sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% 20%, rgba(116,223,255,0.10), transparent 25%),
+        radial-gradient(circle at 85% 12%, rgba(255,123,143,0.12), transparent 22%),
+        linear-gradient(180deg, #06101d 0%, #091527 45%, #050c16 100%);
+    }
+
+    .app {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      gap: 20px;
+    }
+
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    .hero {
+      padding: 24px;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .eyebrow {
+      color: var(--cyan);
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(30px, 4vw, 52px);
+      line-height: 1;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .badge {
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(116,223,255,0.22);
+      background: rgba(116,223,255,0.08);
+      color: var(--cyan);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 380px minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .panel {
+      padding: 20px;
+    }
+
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 15px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 700;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      border: 1px solid rgba(137, 161, 214, 0.2);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font: inherit;
+      outline: none;
+    }
+
+    .field textarea {
+      min-height: 90px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      border-color: rgba(116,223,255,0.35);
+      box-shadow: 0 0 0 4px rgba(116,223,255,0.08);
+    }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: linear-gradient(135deg, #74dfff, #6f85ff);
+      color: #08111f;
+    }
+
+    .secondary {
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+      border: 1px solid rgba(137, 161, 214, 0.18);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .stat {
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+    }
+
+    .stat .label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 8px;
+    }
+
+    .stat .value {
+      font-size: 30px;
+      font-weight: 700;
+    }
+
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 10px 8px;
+      border-bottom: 1px solid rgba(137,161,214,0.12);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .pill.stock { color: var(--cyan); }
+    .pill.crypto { color: var(--gold); }
+    .pill.watch { color: #c8d5f5; }
+
+    .hint {
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1100px) {
+      .grid, .section-grid, .stats { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Paper Trading Lab</div>
+        <h1>Market Research & Paper Trading Dashboard</h1>
+        <p>
+          Manual research and paper trading workspace with a fixed starting bankroll of <strong>USD 1000</strong>.
+          Track watchlist ideas, simulated trades, open positions, realized P&L, and thesis notes for both stocks and crypto.
+        </p>
+      </div>
+      <div class="badge">Research only · no auto execution</div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Add / update idea</h2>
+
+        <div class="row">
+          <div class="field">
+            <label for="assetType">Asset type</label>
+            <select id="assetType">
+              <option value="stock">Stock</option>
+              <option value="crypto">Crypto</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="tradeAction">Action</label>
+            <select id="tradeAction">
+              <option value="BUY">BUY</option>
+              <option value="SELL">SELL</option>
+              <option value="WATCH">WATCH</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="symbolInput">Ticker / symbol</label>
+            <input id="symbolInput" value="QQQ" />
+          </div>
+          <div class="field">
+            <label for="dateInput">Date</label>
+            <input id="dateInput" value="2026-04-04" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="priceInput">Entry / trade price</label>
+            <input id="priceInput" type="number" step="0.01" value="100" />
+          </div>
+          <div class="field">
+            <label for="qtyInput">Quantity</label>
+            <input id="qtyInput" type="number" step="0.0001" value="1" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="markInput">Current mark</label>
+            <input id="markInput" type="number" step="0.01" value="100" />
+          </div>
+          <div class="field">
+            <label for="tagInput">Tag</label>
+            <input id="tagInput" value="watchlist" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="thesisInput">Thesis / note</label>
+          <textarea id="thesisInput">Market leadership, catalyst, risk, and what would invalidate the idea.</textarea>
+        </div>
+
+        <div class="actions">
+          <button class="primary" id="addTradeBtn">Add record</button>
+          <button class="secondary" id="resetBtn">Reset sample</button>
+        </div>
+
+        <div class="hint">
+          This dashboard is manual and local to the page for now. You can log watchlist ideas, simulated buys/sells, and update current marks to track unrealized P&L.
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="stats">
+          <div class="stat">
+            <div class="label">Starting capital</div>
+            <div class="value mono">$1000.00</div>
+          </div>
+          <div class="stat">
+            <div class="label">Cash</div>
+            <div class="value mono" id="cashValue">$1000.00</div>
+          </div>
+          <div class="stat">
+            <div class="label">Open P&L</div>
+            <div class="value mono" id="openPnlValue">$0.00</div>
+          </div>
+          <div class="stat">
+            <div class="label">Equity</div>
+            <div class="value mono" id="equityValue">$1000.00</div>
+          </div>
+        </div>
+
+        <div class="section-grid">
+          <div class="panel" style="padding:16px; background: rgba(255,255,255,0.02);">
+            <h2>Open positions</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Type</th>
+                  <th>Qty</th>
+                  <th>Avg</th>
+                  <th>Mark</th>
+                  <th>P&L</th>
+                </tr>
+              </thead>
+              <tbody id="positionsBody"></tbody>
+            </table>
+          </div>
+
+          <div class="panel" style="padding:16px; background: rgba(255,255,255,0.02);">
+            <h2>Watchlist / ideas</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Type</th>
+                  <th>Tag</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody id="watchlistBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel" style="padding:16px; background: rgba(255,255,255,0.02); margin-top:16px;">
+          <h2>Trade log</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Action</th>
+                <th>Symbol</th>
+                <th>Type</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody id="tradesBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const STARTING_CAPITAL = 1000;
+
+    const state = {
+      cash: STARTING_CAPITAL,
+      trades: [],
+      watchlist: [],
+      positions: {}
+    };
+
+    const els = {
+      assetType: document.getElementById('assetType'),
+      tradeAction: document.getElementById('tradeAction'),
+      symbolInput: document.getElementById('symbolInput'),
+      dateInput: document.getElementById('dateInput'),
+      priceInput: document.getElementById('priceInput'),
+      qtyInput: document.getElementById('qtyInput'),
+      markInput: document.getElementById('markInput'),
+      tagInput: document.getElementById('tagInput'),
+      thesisInput: document.getElementById('thesisInput'),
+      addTradeBtn: document.getElementById('addTradeBtn'),
+      resetBtn: document.getElementById('resetBtn'),
+      cashValue: document.getElementById('cashValue'),
+      openPnlValue: document.getElementById('openPnlValue'),
+      equityValue: document.getElementById('equityValue'),
+      positionsBody: document.getElementById('positionsBody'),
+      watchlistBody: document.getElementById('watchlistBody'),
+      tradesBody: document.getElementById('tradesBody')
+    };
+
+    function fmtMoney(n) {
+      const sign = n < 0 ? '-' : '';
+      return `${sign}$${Math.abs(n).toFixed(2)}`;
+    }
+
+    function posKey(type, symbol) {
+      return `${type}:${symbol.toUpperCase()}`;
+    }
+
+    function addRecord() {
+      const type = els.assetType.value;
+      const action = els.tradeAction.value;
+      const symbol = els.symbolInput.value.trim().toUpperCase();
+      const date = els.dateInput.value.trim();
+      const price = Number(els.priceInput.value || 0);
+      const qty = Number(els.qtyInput.value || 0);
+      const mark = Number(els.markInput.value || price);
+      const tag = els.tagInput.value.trim();
+      const thesis = els.thesisInput.value.trim();
+
+      if (!symbol) return;
+
+      if (action === 'WATCH') {
+        state.watchlist.unshift({ symbol, type, tag, thesis, date });
+      } else {
+        state.trades.unshift({ date, action, symbol, type, qty, price, mark, thesis });
+        const key = posKey(type, symbol);
+        const existing = state.positions[key] || { symbol, type, qty: 0, avg: 0, mark };
+
+        if (action === 'BUY') {
+          const newQty = existing.qty + qty;
+          const newAvg = newQty ? ((existing.qty * existing.avg) + (qty * price)) / newQty : 0;
+          state.positions[key] = { ...existing, qty: newQty, avg: newAvg, mark };
+          state.cash -= qty * price;
+        }
+
+        if (action === 'SELL') {
+          const remainingQty = existing.qty - qty;
+          const realized = qty * (price - existing.avg);
+          state.cash += qty * price;
+          if (remainingQty <= 0) {
+            delete state.positions[key];
+          } else {
+            state.positions[key] = { ...existing, qty: remainingQty, mark };
+          }
+          state.trades[0].realized = realized;
+        }
+      }
+
+      render();
+    }
+
+    function render() {
+      let openPnl = 0;
+      let marketValue = 0;
+
+      els.positionsBody.innerHTML = '';
+      Object.values(state.positions).forEach(pos => {
+        const pnl = (pos.mark - pos.avg) * pos.qty;
+        openPnl += pnl;
+        marketValue += pos.mark * pos.qty;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${pos.symbol}</td>
+          <td><span class="pill ${pos.type}">${pos.type}</span></td>
+          <td class="mono">${pos.qty}</td>
+          <td class="mono">${pos.avg.toFixed(2)}</td>
+          <td class="mono">${pos.mark.toFixed(2)}</td>
+          <td class="mono ${pnl >= 0 ? 'positive' : 'negative'}">${fmtMoney(pnl)}</td>
+        `;
+        els.positionsBody.appendChild(tr);
+      });
+
+      els.watchlistBody.innerHTML = '';
+      state.watchlist.slice(0, 12).forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${item.symbol}</td>
+          <td><span class="pill ${item.type}">${item.type}</span></td>
+          <td><span class="pill watch">${item.tag || 'watch'}</span></td>
+          <td>${item.thesis || ''}</td>
+        `;
+        els.watchlistBody.appendChild(tr);
+      });
+
+      els.tradesBody.innerHTML = '';
+      state.trades.slice(0, 20).forEach(t => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${t.date}</td>
+          <td>${t.action}</td>
+          <td class="mono">${t.symbol}</td>
+          <td><span class="pill ${t.type}">${t.type}</span></td>
+          <td class="mono">${t.qty}</td>
+          <td class="mono">${t.price.toFixed(2)}</td>
+          <td>${t.thesis || ''}</td>
+        `;
+        els.tradesBody.appendChild(tr);
+      });
+
+      const equity = state.cash + marketValue;
+      els.cashValue.textContent = fmtMoney(state.cash);
+      els.openPnlValue.textContent = fmtMoney(openPnl);
+      els.openPnlValue.className = `value mono ${openPnl >= 0 ? 'positive' : 'negative'}`;
+      els.equityValue.textContent = fmtMoney(equity);
+    }
+
+    function resetSample() {
+      els.assetType.value = 'stock';
+      els.tradeAction.value = 'BUY';
+      els.symbolInput.value = 'QQQ';
+      els.dateInput.value = '2026-04-04';
+      els.priceInput.value = '100';
+      els.qtyInput.value = '1';
+      els.markInput.value = '100';
+      els.tagInput.value = 'watchlist';
+      els.thesisInput.value = 'Market leadership, catalyst, risk, and what would invalidate the idea.';
+    }
+
+    els.addTradeBtn.addEventListener('click', addRecord);
+    els.resetBtn.addEventListener('click', resetSample);
+
+    state.watchlist = [
+      { symbol: 'QQQ', type: 'stock', tag: 'macro', thesis: 'Track growth / rates regime and leadership breadth.', date: '2026-04-04' },
+      { symbol: 'BTC', type: 'crypto', tag: 'momentum', thesis: 'Watch for crypto-beta spillover and headline sensitivity.', date: '2026-04-04' }
+    ];
+    render();
+  </script>
+</body>
+</html>
