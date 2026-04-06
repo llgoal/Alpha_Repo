@@ -1,263 +1,737 @@
-diff --git a/cheque-review.html b/cheque-review.html
-index 1828920013c5f6fbd13fd82f0e06a00afe0ced9b..70e0943fb4d378f52ccb3cacab6f9d6cb782677c 100644
---- a/cheque-review.html
-+++ b/cheque-review.html
-@@ -363,58 +363,63 @@
-       .controls { position: static; }
-     }
-   </style>
- </head>
- <body>
-   <div class="app">
-     <section class="panel controls">
-       <div class="eyebrow">Layout Tool</div>
-       <h1>Text placement app</h1>
-       <p class="intro">
-         A generic text placement surface inspired by report layout tools. Enter the three fields, then drag and resize each text block on the page.
-       </p>
- 
-       <div class="field">
-         <label for="payeeInput">Payee name</label>
-         <input id="payeeInput" type="text" value="Sample Payee Name" maxlength="60" />
-       </div>
- 
-       <div class="field">
-         <label for="amountInput">Amount</label>
-         <input id="amountInput" type="text" value="2345.67" maxlength="20" />
-       </div>
- 
-       <div class="field">
-         <label for="dateInput">Date</label>
--        <input id="dateInput" type="text" value="02 04 2026" maxlength="24" />
-+        <input id="dateInput" type="text" maxlength="24" />
-       </div>
- 
-       <div class="field">
-         <label for="amountWordsInput">Amount in words</label>
-         <textarea id="amountWordsInput" readonly></textarea>
-       </div>
- 
-+      <div class="field">
-+        <label for="previousMonthInput">Previous month (English)</label>
-+        <input id="previousMonthInput" type="text" readonly />
-+      </div>
-+
-       <div class="row">
-         <div class="field">
-           <label for="snapInput">Grid snap</label>
-           <select id="snapInput">
-             <option value="0">Off</option>
-             <option value="24">0.25 in</option>
-             <option value="48">0.5 in</option>
-             <option value="96" selected>1 in</option>
-           </select>
-         </div>
-         <div class="field">
-           <label for="zoomInput">Zoom</label>
-           <select id="zoomInput">
-             <option value="0.75">75%</option>
-             <option value="0.9">90%</option>
-             <option value="1" selected>100%</option>
-             <option value="1.1">110%</option>
-             <option value="1.25">125%</option>
-           </select>
-         </div>
-       </div>
- 
-       <div class="row">
-         <div class="field">
-           <label for="payeeFontInput">Payee font</label>
-@@ -489,50 +494,51 @@
-       </div>
- 
-       <div class="page-wrap">
-         <div class="layout-stage">
-           <div class="ruler ruler-y" id="rulerY"></div>
-           <div class="page" id="page">
-             <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 96px; top: 110px; width: 300px; height: 42px; font-size: 16px;">Sample Payee Name<div class="resize"></div></div>
-             <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 48px; top: 144px; width: 528px; height: 42px; font-size: 16px;">Two thousand three hundred forty-five and 67/100<div class="resize"></div></div>
-             <div class="item amount-number-item" id="amountNumberItem" data-key="amountNumber" style="left: 533px; top: 120px; width: 160px; height: 44px; font-size: 20px;">2345.67<div class="resize"></div></div>
-             <div class="item date-item" id="dateItem" data-key="date" style="left: 538px; top: 58px; width: 180px; height: 42px; font-size: 20px;">02042026<div class="resize"></div></div>
-           </div>
-           <div class="ruler-corner"></div>
-           <div class="ruler ruler-x" id="rulerX"></div>
-         </div>
-       </div>
- 
-       <div class="statusbar" id="statusbar">Ready. Drag items to place text.</div>
-     </section>
-   </div>
- 
-   <script>
-     const payeeInput = document.getElementById('payeeInput');
-     const amountInput = document.getElementById('amountInput');
-     const dateInput = document.getElementById('dateInput');
-     const amountWordsInput = document.getElementById('amountWordsInput');
-+    const previousMonthInput = document.getElementById('previousMonthInput');
-     const snapInput = document.getElementById('snapInput');
-     const zoomInput = document.getElementById('zoomInput');
-     const payeeFontInput = document.getElementById('payeeFontInput');
-     const amountFontInput = document.getElementById('amountFontInput');
-     const dateFontInput = document.getElementById('dateFontInput');
-     const amountNumberFontInput = document.getElementById('amountNumberFontInput');
-     const selectedItemInput = document.getElementById('selectedItemInput');
-     const xInput = document.getElementById('xInput');
-     const yInput = document.getElementById('yInput');
-     const widthInput = document.getElementById('widthInput');
-     const heightInput = document.getElementById('heightInput');
-     const page = document.getElementById('page');
-     const layoutStage = document.querySelector('.layout-stage');
-     const rulerX = document.getElementById('rulerX');
-     const rulerY = document.getElementById('rulerY');
-     const statusbar = document.getElementById('statusbar');
- 
-     const payeeItem = document.getElementById('payeeItem');
-     const amountItem = document.getElementById('amountItem');
-     const amountNumberItem = document.getElementById('amountNumberItem');
-     const dateItem = document.getElementById('dateItem');
- 
-     const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine'];
-     const TEENS = ['ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
-     const TENS = ['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
-@@ -572,63 +578,105 @@
-           const text = underThousand(chunk);
-           parts.push(label ? `${text} ${label}` : text);
-           remaining %= value;
-         }
-       }
-       return parts.join(' ');
-     }
- 
-     function normalizeAmount(raw) {
-       const cleaned = (raw || '').replace(/[^\d.]/g, '');
-       if (!cleaned) return null;
-       const value = Number.parseFloat(cleaned);
-       if (!Number.isFinite(value)) return null;
-       return Math.max(0, value);
-     }
- 
-     function formatAmountWords(raw) {
-       const value = normalizeAmount(raw);
-       if (value === null) return 'Enter a valid numeric amount';
-       const dollars = Math.floor(value);
-       const cents = Math.round((value - dollars) * 100);
-       const words = numberToWords(dollars);
-       return `${words.charAt(0).toUpperCase() + words.slice(1)} and ${String(cents).padStart(2, '0')}/100`;
-     }
- 
-+    function parseDateInput(raw) {
-+      if (!raw) return null;
-+      const value = raw.trim();
-+      const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-+      if (isoMatch) {
-+        const [, y, m, d] = isoMatch;
-+        const date = new Date(Number(y), Number(m) - 1, Number(d));
-+        if (!Number.isNaN(date.getTime())) return date;
-+      }
-+
-+      const compactMatch = /^(\d{2})(\d{2})(\d{4})$/.exec(value.replace(/\D/g, ''));
-+      if (compactMatch) {
-+        const [, m, d, y] = compactMatch;
-+        const date = new Date(Number(y), Number(m) - 1, Number(d));
-+        if (!Number.isNaN(date.getTime())) return date;
-+      }
-+      return null;
-+    }
-+
-     function formatDate(raw) {
--      const digits = (raw || '').replace(/\D/g, '');
--      if (digits.length === 8) return digits;
--      return digits || raw || '';
-+      const parsed = parseDateInput(raw);
-+      if (!parsed) {
-+        const digits = (raw || '').replace(/\D/g, '');
-+        if (digits.length === 8) return digits;
-+        return digits || raw || '';
-+      }
-+
-+      const month = String(parsed.getMonth() + 1).padStart(2, '0');
-+      const day = String(parsed.getDate()).padStart(2, '0');
-+      const year = String(parsed.getFullYear());
-+      return `${month}${day}${year}`;
-+    }
-+
-+    function getPreviousMonthName(raw) {
-+      const parsed = parseDateInput(raw);
-+      if (!parsed) return '';
-+      const previousMonthDate = new Date(parsed.getFullYear(), parsed.getMonth() - 1, 1);
-+      return new Intl.DateTimeFormat('en-US', { month: 'long' }).format(previousMonthDate);
-+    }
-+
-+    function getFirstDayOfCurrentMonthText() {
-+      const now = new Date();
-+      const year = now.getFullYear();
-+      const month = String(now.getMonth() + 1).padStart(2, '0');
-+      return `${month} 01 ${year}`;
-     }
- 
-     function syncText() {
-       const amountWords = formatAmountWords(amountInput.value);
-       payeeItem.childNodes[0].nodeValue = payeeInput.value || ' ';
-       amountItem.childNodes[0].nodeValue = amountWords;
-       amountNumberItem.childNodes[0].nodeValue = amountInput.value || ' ';
-       dateItem.childNodes[0].nodeValue = formatDate(dateInput.value) || ' ';
-       amountWordsInput.value = amountWords;
-+      previousMonthInput.value = getPreviousMonthName(dateInput.value);
-       payeeItem.style.fontSize = `${payeeFontInput.value || 16}px`;
-       amountItem.style.fontSize = `${amountFontInput.value || 16}px`;
-       amountNumberItem.style.fontSize = `${amountNumberFontInput.value || 20}px`;
-       dateItem.style.fontSize = `${dateFontInput.value || 20}px`;
-     }
- 
-     function buildRuler() {
-       rulerX.innerHTML = '';
-       rulerY.innerHTML = '';
-       const widthPx = page.offsetWidth;
-       const heightPx = page.offsetHeight;
-       const inchPx = 96;
-       for (let x = 0; x <= widthPx; x += inchPx) {
-         const mark = document.createElement('div');
-         mark.className = 'ruler-mark';
-         mark.style.left = `${x}px`;
-         mark.textContent = `${Math.round(x / inchPx)}″`;
-         rulerX.appendChild(mark);
-       }
-       for (let y = 0; y <= heightPx; y += inchPx) {
-         const mark = document.createElement('div');
-         mark.className = 'ruler-mark';
-         mark.style.top = `${y}px`;
-         mark.textContent = `${Math.round(y / inchPx)}″`;
-         rulerY.appendChild(mark);
-@@ -707,31 +755,32 @@
- 
-       dateItem.style.left = '538px';
-       dateItem.style.top = '58px';
-       dateItem.style.width = '180px';
-       dateItem.style.height = '42px';
-       setStatus('Layout reset.');
-     }
- 
-     document.getElementById('resetBtn').addEventListener('click', () => {
-       resetLayout();
-       syncInspector();
-     });
-     document.getElementById('printBtn').addEventListener('click', () => window.print());
- 
-     zoomInput.addEventListener('change', () => {
-       const zoom = Number(zoomInput.value || 1);
-       page.style.transform = `scale(${zoom})`;
-       page.style.transformOrigin = 'top center';
-       setStatus(`Zoom set to ${Math.round(zoom * 100)}%.`);
-     });
- 
-     selectedItemInput.addEventListener('change', () => syncInspector());
-     [xInput, yInput, widthInput, heightInput].forEach(input => input.addEventListener('input', applyInspector));
-     [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
- 
-+    dateInput.value = getFirstDayOfCurrentMonthText();
-     buildRuler();
-     syncText();
-     activateItem(payeeItem);
-   </script>
- </body>
- </html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Text Placement App</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+    :root {
+      --bg: #edf2fb;
+      --panel: rgba(255,255,255,0.92);
+      --ink: #24324a;
+      --muted: #6b7993;
+      --line: #d8e0ef;
+      --accent: #4b6fff;
+      --accent-soft: rgba(75, 111, 255, 0.12);
+      --paper: #ffffff;
+      --shadow: 0 24px 60px rgba(42, 61, 102, 0.14);
+      --ppi: 96;
+      --canvas-width-in: 7.5;
+      --canvas-height-in: 3.5;
+      --canvas-width: calc(var(--canvas-width-in) * var(--ppi) * 1px);
+      --canvas-height: calc(var(--canvas-height-in) * var(--ppi) * 1px);
+      --grid-cell: calc(1 * var(--ppi) * 1px);
+      --ruler-size: 44px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'IBM Plex Sans', sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(75,111,255,0.12), transparent 28%),
+        linear-gradient(180deg, #f4f7fd 0%, #eaf0fb 100%);
+    }
+
+    .app {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(189, 202, 228, 0.7);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    .controls {
+      padding: 22px;
+      position: sticky;
+      top: 18px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      line-height: 1.08;
+    }
+
+    .intro {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      border: 1px solid #c8d4ea;
+      border-radius: 14px;
+      padding: 13px 14px;
+      font-size: 15px;
+      color: var(--ink);
+      background: rgba(255,255,255,0.98);
+      outline: none;
+      font-family: inherit;
+    }
+
+    .field textarea {
+      min-height: 104px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    .field input:focus,
+    .field textarea:focus,
+    .field select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .triple-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 15px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: linear-gradient(135deg, #4b6fff, #7692ff);
+      color: white;
+      box-shadow: 0 12px 24px rgba(75, 111, 255, 0.24);
+    }
+
+    .secondary {
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid #c7d2e8;
+    }
+
+    .help {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(75,111,255,0.06);
+      border: 1px solid rgba(75,111,255,0.12);
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .canvas-panel {
+      padding: 20px;
+    }
+
+    .canvas-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .canvas-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .page-wrap {
+      overflow: auto;
+      padding: 16px;
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(235,242,255,0.9), rgba(224,234,251,0.9));
+      border: 1px solid rgba(189, 202, 228, 0.6);
+    }
+
+    .layout-stage {
+      width: max-content;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: var(--ruler-size) var(--canvas-width);
+      grid-template-rows: var(--canvas-height) var(--ruler-size);
+      gap: 0;
+      align-items: start;
+      justify-items: start;
+    }
+
+
+    .ruler {
+      position: relative;
+      background: linear-gradient(180deg, #f7f9fe, #eef3fc);
+      border: 1px solid #d9e1ef;
+      color: #7a88a5;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      overflow: hidden;
+    }
+
+    .ruler-y {
+      width: var(--ruler-size);
+      height: var(--canvas-height);
+      border-right: 0;
+      border-radius: 12px 0 0 12px;
+      background-image: repeating-linear-gradient(
+        to bottom,
+        rgba(75,111,255,0.18) 0 1px,
+        transparent 1px var(--grid-cell)
+      );
+      background-size: 100% var(--grid-cell);
+    }
+
+    .ruler-x {
+      width: var(--canvas-width);
+      height: var(--ruler-size);
+      border-top: 0;
+      border-radius: 0 0 12px 12px;
+      background-image: repeating-linear-gradient(
+        to right,
+        rgba(75,111,255,0.18) 0 1px,
+        transparent 1px var(--grid-cell)
+      );
+      background-size: var(--grid-cell) 100%;
+    }
+
+    .ruler-corner {
+      width: var(--ruler-size);
+      height: var(--ruler-size);
+      border: 1px solid #d9e1ef;
+      border-top: 0;
+      border-right: 0;
+      border-radius: 0 0 0 12px;
+      background: linear-gradient(180deg, #f7f9fe, #eef3fc);
+    }
+
+    .ruler-mark {
+      position: absolute;
+      color: #7a88a5;
+      opacity: 0.9;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .ruler-y .ruler-mark {
+      left: 6px;
+      transform: translateY(-50%);
+    }
+
+    .ruler-x .ruler-mark {
+      top: 6px;
+      transform: translateX(-50%);
+    }
+
+    .page {
+      position: relative;
+      width: var(--canvas-width);
+      height: var(--canvas-height);
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid #d9e1ef;
+      box-shadow: 0 18px 36px rgba(54, 70, 103, 0.10);
+      background-image:
+        linear-gradient(rgba(216,224,239,0.55) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(216,224,239,0.55) 1px, transparent 1px);
+      background-size: var(--grid-cell) var(--grid-cell);
+      overflow: hidden;
+    }
+
+    .page::before {
+      content: 'TEXT PLACEMENT REVIEW';
+      position: absolute;
+      top: 14px;
+      left: 20px;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #96a4c1;
+      pointer-events: none;
+    }
+
+    .item {
+      position: absolute;
+      min-width: 120px;
+      min-height: 36px;
+      padding: 8px 10px;
+      border: 1px dashed rgba(75,111,255,0.28);
+      border-radius: 10px;
+      cursor: default;
+      user-select: none;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: rgba(255,255,255,0.52);
+      box-shadow: inset 0 0 0 1px rgba(75,111,255,0.08);
+    }
+
+    .item.active {
+      border-color: #4b6fff;
+      box-shadow: 0 0 0 3px rgba(75,111,255,0.12);
+    }
+
+    .item .resize {
+      display: none;
+    }
+
+    .payee-item { font-size: 16px; font-weight: 400; }
+    .amount-item { font-size: 16px; font-weight: 400; }
+    .date-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
+    .amount-number-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; }
+
+    .statusbar {
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    @media print {
+      body { background: white; }
+      .app { display: block; padding: 0; max-width: none; }
+      .controls, .canvas-header, .statusbar, .ruler, .ruler-corner { display: none !important; }
+      .panel, .canvas-panel, .page-wrap { background: transparent; border: 0; box-shadow: none; padding: 0; }
+      .layout-stage { display: block; width: auto; }
+      .page { box-shadow: none; margin: 0; border: 0; }
+      .page::before { content: none; }
+      .item { border-color: transparent !important; box-shadow: none !important; background: transparent; }
+      .item .resize { display: none; }
+      @page { size: auto; margin: 0; }
+    }
+
+    @media (max-width: 1120px) {
+      .app { grid-template-columns: 1fr; }
+      .controls { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="panel controls">
+      <div class="eyebrow">Layout Tool</div>
+      <h1>Text placement app</h1>
+      <p class="intro">
+        A generic text placement surface inspired by report layout tools. Enter the three fields, then drag and resize each text block on the page.
+      </p>
+
+      <div class="field">
+        <label for="payeeInput">Payee name</label>
+        <input id="payeeInput" type="text" value="Sample Payee Name" maxlength="60" />
+      </div>
+
+      <div class="field">
+        <label for="amountInput">Amount</label>
+        <input id="amountInput" type="text" value="2345.67" maxlength="20" />
+      </div>
+
+      <div class="field">
+        <label for="dateInput">Date</label>
+        <input id="dateInput" type="text" value="02 04 2026" maxlength="24" />
+      </div>
+
+      <div class="field">
+        <label for="amountWordsInput">Amount in words</label>
+        <textarea id="amountWordsInput" readonly></textarea>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="snapInput">Grid snap</label>
+          <select id="snapInput">
+            <option value="0">Off</option>
+            <option value="24">0.25 in</option>
+            <option value="48">0.5 in</option>
+            <option value="96" selected>1 in</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="zoomInput">Zoom</label>
+          <select id="zoomInput">
+            <option value="0.75">75%</option>
+            <option value="0.9">90%</option>
+            <option value="1" selected>100%</option>
+            <option value="1.1">110%</option>
+            <option value="1.25">125%</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="payeeFontInput">Payee font</label>
+          <input id="payeeFontInput" type="number" value="16" min="8" max="96" />
+        </div>
+        <div class="field">
+          <label for="amountFontInput">Amount words font</label>
+          <input id="amountFontInput" type="number" value="16" min="8" max="96" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="amountNumberFontInput">Amount number font</label>
+          <input id="amountNumberFontInput" type="number" value="20" min="8" max="96" />
+        </div>
+        <div class="field">
+          <label for="dateFontInput">Date font</label>
+          <input id="dateFontInput" type="number" value="20" min="8" max="96" />
+        </div>
+      </div>
+
+
+      <div class="field">
+        <label for="selectedItemInput">Selected block</label>
+        <select id="selectedItemInput">
+          <option value="payee">Payee</option>
+          <option value="amountWords">Amount in words</option>
+          <option value="amountNumber">Amount number</option>
+          <option value="date">Date</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="xInput">X (in)</label>
+          <input id="xInput" type="number" step="0.01" min="0" />
+        </div>
+        <div class="field">
+          <label for="yInput">Y (in)</label>
+          <input id="yInput" type="number" step="0.01" min="0" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="widthInput">Width (in)</label>
+          <input id="widthInput" type="number" step="0.01" min="0.25" />
+        </div>
+        <div class="field">
+          <label for="heightInput">Height (in)</label>
+          <input id="heightInput" type="number" step="0.01" min="0.25" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="printBtn">Print</button>
+        <button class="secondary" id="resetBtn">Reset layout</button>
+      </div>
+
+      <div class="help">
+        - Canvas drag/drop is disabled.<br>
+        - Use the side panel only to adjust X/Y, width/height, and font sizes.<br>
+        - Canvas highlights are for on-screen placement only and do not print.<br>
+        - Grid cells are exactly <strong>1 inch</strong>, and the canvas is exactly <strong>7.5 in × 3.5 in</strong>.
+      </div>
+    </section>
+
+    <section class="panel canvas-panel">
+      <div class="canvas-header">
+        <div class="canvas-title">Placement canvas</div>
+      </div>
+
+      <div class="page-wrap">
+        <div class="layout-stage">
+          <div class="ruler ruler-y" id="rulerY"></div>
+          <div class="page" id="page">
+            <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 96px; top: 110px; width: 300px; height: 42px; font-size: 16px;">Sample Payee Name<div class="resize"></div></div>
+            <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 48px; top: 144px; width: 528px; height: 42px; font-size: 16px;">Two thousand three hundred forty-five and 67/100<div class="resize"></div></div>
+            <div class="item amount-number-item" id="amountNumberItem" data-key="amountNumber" style="left: 533px; top: 120px; width: 160px; height: 44px; font-size: 20px;">2345.67<div class="resize"></div></div>
+            <div class="item date-item" id="dateItem" data-key="date" style="left: 538px; top: 58px; width: 180px; height: 42px; font-size: 20px;">02042026<div class="resize"></div></div>
+          </div>
+          <div class="ruler-corner"></div>
+          <div class="ruler ruler-x" id="rulerX"></div>
+        </div>
+      </div>
+
+      <div class="statusbar" id="statusbar">Ready. Drag items to place text.</div>
+    </section>
+  </div>
+
+  <script>
+    const payeeInput = document.getElementById('payeeInput');
+    const amountInput = document.getElementById('amountInput');
+    const dateInput = document.getElementById('dateInput');
+    const amountWordsInput = document.getElementById('amountWordsInput');
+    const snapInput = document.getElementById('snapInput');
+    const zoomInput = document.getElementById('zoomInput');
+    const payeeFontInput = document.getElementById('payeeFontInput');
+    const amountFontInput = document.getElementById('amountFontInput');
+    const dateFontInput = document.getElementById('dateFontInput');
+    const amountNumberFontInput = document.getElementById('amountNumberFontInput');
+    const selectedItemInput = document.getElementById('selectedItemInput');
+    const xInput = document.getElementById('xInput');
+    const yInput = document.getElementById('yInput');
+    const widthInput = document.getElementById('widthInput');
+    const heightInput = document.getElementById('heightInput');
+    const page = document.getElementById('page');
+    const layoutStage = document.querySelector('.layout-stage');
+    const rulerX = document.getElementById('rulerX');
+    const rulerY = document.getElementById('rulerY');
+    const statusbar = document.getElementById('statusbar');
+
+    const payeeItem = document.getElementById('payeeItem');
+    const amountItem = document.getElementById('amountItem');
+    const amountNumberItem = document.getElementById('amountNumberItem');
+    const dateItem = document.getElementById('dateItem');
+
+    const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine'];
+    const TEENS = ['ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+    const TENS = ['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+
+    function underThousand(n) {
+      let parts = [];
+      if (n >= 100) {
+        parts.push(ONES[Math.floor(n / 100)] + ' hundred');
+        n %= 100;
+      }
+      if (n >= 20) {
+        const t = Math.floor(n / 10);
+        const o = n % 10;
+        parts.push(TENS[t] + (o ? '-' + ONES[o] : ''));
+      } else if (n >= 10) {
+        parts.push(TEENS[n - 10]);
+      } else if (n > 0) {
+        parts.push(ONES[n]);
+      }
+      return parts.join(' ');
+    }
+
+    function numberToWords(num) {
+      if (num === 0) return 'zero';
+      const groups = [
+        ['', 1],
+        ['thousand', 1000],
+        ['million', 1000000],
+        ['billion', 1000000000]
+      ];
+      let remaining = num;
+      let parts = [];
+      for (let i = groups.length - 1; i >= 0; i--) {
+        const [label, value] = groups[i];
+        const chunk = Math.floor(remaining / value);
+        if (chunk > 0) {
+          const text = underThousand(chunk);
+          parts.push(label ? `${text} ${label}` : text);
+          remaining %= value;
+        }
+      }
+      return parts.join(' ');
+    }
+
+    function normalizeAmount(raw) {
+      const cleaned = (raw || '').replace(/[^\d.]/g, '');
+      if (!cleaned) return null;
+      const value = Number.parseFloat(cleaned);
+      if (!Number.isFinite(value)) return null;
+      return Math.max(0, value);
+    }
+
+    function formatAmountWords(raw) {
+      const value = normalizeAmount(raw);
+      if (value === null) return 'Enter a valid numeric amount';
+      const dollars = Math.floor(value);
+      const cents = Math.round((value - dollars) * 100);
+      const words = numberToWords(dollars);
+      return `${words.charAt(0).toUpperCase() + words.slice(1)} and ${String(cents).padStart(2, '0')}/100`;
+    }
+
+    function formatDate(raw) {
+      const digits = (raw || '').replace(/\D/g, '');
+      if (digits.length === 8) return digits;
+      return digits || raw || '';
+    }
+
+    function syncText() {
+      const amountWords = formatAmountWords(amountInput.value);
+      payeeItem.childNodes[0].nodeValue = payeeInput.value || ' ';
+      amountItem.childNodes[0].nodeValue = amountWords;
+      amountNumberItem.childNodes[0].nodeValue = amountInput.value || ' ';
+      dateItem.childNodes[0].nodeValue = formatDate(dateInput.value) || ' ';
+      amountWordsInput.value = amountWords;
+      payeeItem.style.fontSize = `${payeeFontInput.value || 16}px`;
+      amountItem.style.fontSize = `${amountFontInput.value || 16}px`;
+      amountNumberItem.style.fontSize = `${amountNumberFontInput.value || 20}px`;
+      dateItem.style.fontSize = `${dateFontInput.value || 20}px`;
+    }
+
+    function buildRuler() {
+      rulerX.innerHTML = '';
+      rulerY.innerHTML = '';
+      const widthPx = page.offsetWidth;
+      const heightPx = page.offsetHeight;
+      const inchPx = 96;
+      for (let x = 0; x <= widthPx; x += inchPx) {
+        const mark = document.createElement('div');
+        mark.className = 'ruler-mark';
+        mark.style.left = `${x}px`;
+        mark.textContent = `${Math.round(x / inchPx)}″`;
+        rulerX.appendChild(mark);
+      }
+      for (let y = 0; y <= heightPx; y += inchPx) {
+        const mark = document.createElement('div');
+        mark.className = 'ruler-mark';
+        mark.style.top = `${y}px`;
+        mark.textContent = `${Math.round(y / inchPx)}″`;
+        rulerY.appendChild(mark);
+      }
+    }
+
+    function getItemByKey(key) {
+      if (key === 'payee') return payeeItem;
+      if (key === 'amountWords') return amountItem;
+      if (key === 'amountNumber') return amountNumberItem;
+      return dateItem;
+    }
+
+    function pxToIn(px) {
+      return (px / 96).toFixed(2);
+    }
+
+    function inToPx(value) {
+      return Math.round(Number(value || 0) * 96);
+    }
+
+    function syncInspector(item = getItemByKey(selectedItemInput.value)) {
+      if (!item) return;
+      selectedItemInput.value = item.dataset.key;
+      xInput.value = pxToIn(parseFloat(item.style.left || 0));
+      yInput.value = pxToIn(parseFloat(item.style.top || 0));
+      widthInput.value = pxToIn(parseFloat(item.style.width || 0));
+      heightInput.value = pxToIn(parseFloat(item.style.height || 0));
+    }
+
+    function applyInspector() {
+      const item = getItemByKey(selectedItemInput.value);
+      if (!item) return;
+      item.style.left = `${Math.max(0, inToPx(xInput.value))}px`;
+      item.style.top = `${Math.max(0, inToPx(yInput.value))}px`;
+      item.style.width = `${Math.max(24, inToPx(widthInput.value))}px`;
+      item.style.height = `${Math.max(24, inToPx(heightInput.value))}px`;
+      setStatus(`${item.dataset.key}: x ${xInput.value}in, y ${yInput.value}in, w ${widthInput.value}in, h ${heightInput.value}in`);
+    }
+
+
+    function snap(value) {
+      const step = Number(snapInput.value || 0);
+      if (!step) return value;
+      return Math.round(value / step) * step;
+    }
+
+    function setStatus(text) {
+      statusbar.textContent = text;
+    }
+
+    function activateItem(item) {
+      document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+      item.classList.add('active');
+      syncInspector(item);
+    }
+
+    [payeeItem, amountItem, amountNumberItem, dateItem].forEach(item => {
+      item.addEventListener('click', () => activateItem(item));
+    });
+    function resetLayout() {
+      payeeItem.style.left = '96px';
+      payeeItem.style.top = '110px';
+      payeeItem.style.width = '300px';
+      payeeItem.style.height = '42px';
+
+      amountItem.style.left = '48px';
+      amountItem.style.top = '144px';
+      amountItem.style.width = '528px';
+      amountItem.style.height = '42px';
+
+      amountNumberItem.style.left = '533px';
+      amountNumberItem.style.top = '120px';
+      amountNumberItem.style.width = '160px';
+      amountNumberItem.style.height = '44px';
+
+      dateItem.style.left = '538px';
+      dateItem.style.top = '58px';
+      dateItem.style.width = '180px';
+      dateItem.style.height = '42px';
+      setStatus('Layout reset.');
+    }
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      resetLayout();
+      syncInspector();
+    });
+    document.getElementById('printBtn').addEventListener('click', () => window.print());
+
+    zoomInput.addEventListener('change', () => {
+      const zoom = Number(zoomInput.value || 1);
+      page.style.transform = `scale(${zoom})`;
+      page.style.transformOrigin = 'top center';
+      setStatus(`Zoom set to ${Math.round(zoom * 100)}%.`);
+    });
+
+    selectedItemInput.addEventListener('change', () => syncInspector());
+    [xInput, yInput, widthInput, heightInput].forEach(input => input.addEventListener('input', applyInspector));
+    [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
+
+    buildRuler();
+    syncText();
+    activateItem(payeeItem);
+  </script>
+</body>
+</html>
