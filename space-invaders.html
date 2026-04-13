@@ -464,56 +464,76 @@
       ctx.save();
       ctx.translate(p.x, p.y);
 
-      const body = ctx.createLinearGradient(-24, -16, 24, 20);
-      body.addColorStop(0, '#eaf8ff');
-      body.addColorStop(0.45, '#8fdfff');
-      body.addColorStop(1, '#4678ff');
-      ctx.fillStyle = body;
+      const shadow = ctx.createRadialGradient(0, 10, 2, 0, 10, 34);
+      shadow.addColorStop(0, 'rgba(0,0,0,0.32)');
+      shadow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = shadow;
       ctx.beginPath();
-      ctx.moveTo(0, -28);
-      ctx.bezierCurveTo(12, -12, 20, 8, 18, 28);
-      ctx.lineTo(0, 16);
-      ctx.lineTo(-18, 28);
-      ctx.bezierCurveTo(-20, 8, -12, -12, 0, -28);
-      ctx.closePath();
+      ctx.ellipse(0, 18, 28, 12, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      const wing = ctx.createLinearGradient(-36, 0, 36, 0);
-      wing.addColorStop(0, '#5f7bff');
-      wing.addColorStop(0.5, '#a0f3ff');
-      wing.addColorStop(1, '#5f7bff');
+      const wing = ctx.createLinearGradient(-38, 0, 38, 0);
+      wing.addColorStop(0, '#5879c7');
+      wing.addColorStop(0.5, '#d7ebff');
+      wing.addColorStop(1, '#5879c7');
       ctx.fillStyle = wing;
       ctx.beginPath();
-      ctx.moveTo(-34, 2);
-      ctx.lineTo(-8, -6);
-      ctx.lineTo(-6, 10);
-      ctx.lineTo(-26, 14);
+      ctx.moveTo(-34, 8);
+      ctx.lineTo(-10, -4);
+      ctx.lineTo(-4, 8);
+      ctx.lineTo(-22, 16);
+      ctx.lineTo(-30, 14);
       ctx.closePath();
       ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(34, 2);
-      ctx.lineTo(8, -6);
-      ctx.lineTo(6, 10);
-      ctx.lineTo(26, 14);
+      ctx.moveTo(34, 8);
+      ctx.lineTo(10, -4);
+      ctx.lineTo(4, 8);
+      ctx.lineTo(22, 16);
+      ctx.lineTo(30, 14);
       ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      const fuselage = ctx.createLinearGradient(-10, -26, 12, 26);
+      fuselage.addColorStop(0, '#f3fbff');
+      fuselage.addColorStop(0.4, '#9dd9ff');
+      fuselage.addColorStop(0.72, '#4f73b8');
+      fuselage.addColorStop(1, '#243b67');
+      ctx.fillStyle = fuselage;
       ctx.beginPath();
-      ctx.ellipse(0, -5, 6, 11, 0, 0, Math.PI * 2);
+      ctx.moveTo(0, -30);
+      ctx.bezierCurveTo(10, -16, 14, 2, 12, 28);
+      ctx.lineTo(0, 20);
+      ctx.lineTo(-12, 28);
+      ctx.bezierCurveTo(-14, 2, -10, -16, 0, -30);
+      ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = '#7effb7';
+      ctx.fillStyle = '#2e4e86';
       ctx.beginPath();
-      ctx.moveTo(-8, 26);
-      ctx.lineTo(-2, 18);
-      ctx.lineTo(0, 32);
+      ctx.moveTo(0, -18);
+      ctx.lineTo(5, 14);
+      ctx.lineTo(0, 20);
+      ctx.lineTo(-5, 14);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.beginPath();
+      ctx.ellipse(0, -8, 5, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#89ffd0';
+      ctx.beginPath();
+      ctx.moveTo(-7, 26);
+      ctx.lineTo(-1, 18);
+      ctx.lineTo(0, 31);
       ctx.closePath();
       ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(8, 26);
-      ctx.lineTo(2, 18);
-      ctx.lineTo(0, 32);
+      ctx.moveTo(7, 26);
+      ctx.lineTo(1, 18);
+      ctx.lineTo(0, 31);
       ctx.closePath();
       ctx.fill();
 
@@ -526,51 +546,63 @@
       const pulse = Math.sin(performance.now() / 240 + e.wobble) * 0.5 + 0.5;
 
       if (e.type === 'carrier') {
-        const grad = ctx.createLinearGradient(-28, -8, 28, 14);
-        grad.addColorStop(0, '#ffcb75');
-        grad.addColorStop(0.6, '#ff7f9a');
-        grad.addColorStop(1, '#742b6f');
+        const grad = ctx.createLinearGradient(-26, -12, 26, 16);
+        grad.addColorStop(0, '#ffd09a');
+        grad.addColorStop(0.45, '#ff8f84');
+        grad.addColorStop(1, '#6d244f');
         ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.moveTo(-30, 8);
-        ctx.quadraticCurveTo(-8, -14, 0, -14);
-        ctx.quadraticCurveTo(8, -14, 30, 8);
-        ctx.quadraticCurveTo(0, 18, -30, 8);
+        ctx.moveTo(-26, 8);
+        ctx.lineTo(-12, -10);
+        ctx.lineTo(12, -10);
+        ctx.lineTo(26, 8);
+        ctx.lineTo(18, 16);
+        ctx.lineTo(-18, 16);
         ctx.closePath();
         ctx.fill();
-        ctx.fillStyle = `rgba(255,255,255,${0.28 + pulse * 0.22})`;
-        ctx.fillRect(-10, -6, 20, 6);
+        ctx.fillStyle = '#4f1f42';
+        ctx.fillRect(-7, -8, 14, 20);
+        ctx.fillStyle = `rgba(255,255,255,${0.22 + pulse * 0.26})`;
+        ctx.fillRect(-10, -3, 20, 5);
       } else if (e.type === 'interceptor') {
         const grad = ctx.createLinearGradient(-18, -10, 18, 12);
-        grad.addColorStop(0, '#ff9f75');
-        grad.addColorStop(0.7, '#ff4d7e');
-        grad.addColorStop(1, '#68124f');
+        grad.addColorStop(0, '#ffb18e');
+        grad.addColorStop(0.55, '#ff5e7a');
+        grad.addColorStop(1, '#5e1d5e');
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.moveTo(0, -14);
-        ctx.lineTo(20, 8);
-        ctx.lineTo(0, 14);
-        ctx.lineTo(-20, 8);
+        ctx.lineTo(18, 0);
+        ctx.lineTo(12, 14);
+        ctx.lineTo(0, 9);
+        ctx.lineTo(-12, 14);
+        ctx.lineTo(-18, 0);
         ctx.closePath();
         ctx.fill();
+        ctx.fillStyle = `rgba(255,255,255,${0.16 + pulse * 0.18})`;
+        ctx.fillRect(-6, -5, 12, 4);
       } else {
-        const grad = ctx.createLinearGradient(-12, -8, 12, 10);
-        grad.addColorStop(0, '#b7ffd2');
-        grad.addColorStop(0.7, '#43d9ae');
-        grad.addColorStop(1, '#0b5d58');
+        const grad = ctx.createLinearGradient(-14, -8, 14, 10);
+        grad.addColorStop(0, '#c5ffd8');
+        grad.addColorStop(0.6, '#47dcb2');
+        grad.addColorStop(1, '#0f5b5b');
         ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.ellipse(0, 0, 15, 8, 0, 0, Math.PI * 2);
+        ctx.moveTo(-14, 6);
+        ctx.quadraticCurveTo(-10, -9, 0, -9);
+        ctx.quadraticCurveTo(10, -9, 14, 6);
+        ctx.lineTo(0, 10);
+        ctx.closePath();
         ctx.fill();
-        ctx.fillStyle = `rgba(255,255,255,${0.22 + pulse * 0.28})`;
-        ctx.fillRect(-7, -3, 14, 4);
+        ctx.fillStyle = `rgba(255,255,255,${0.18 + pulse * 0.22})`;
+        ctx.fillRect(-6, -3, 12, 3);
       }
 
       ctx.restore();
     }
 
     function spawnExplosion(x, y, color = '#ffd36f') {
-      state.explosions.push({ x, y, color, life: 0.5, maxLife: 0.5, radius: 10 + Math.random() * 12 });
+      state.explosions.push({ x, y, color, life: 0.5, maxLife: 0.5, radius: 10 + Math.random() * 12, sparks: Array.from({ length: 7 }, () => ({ angle: Math.random() * Math.PI * 2, speed: 20 + Math.random() * 60 })) });
     }
 
     function shootPlayer() {
@@ -672,19 +704,26 @@
 
     function drawBullets() {
       for (const bullet of state.bullets) {
-        ctx.fillStyle = bullet.color;
+        const grad = ctx.createLinearGradient(bullet.x, bullet.y - 18, bullet.x, bullet.y + 10);
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(0.2, '#ffffff');
+        grad.addColorStop(1, bullet.color);
+        ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(bullet.x, bullet.y, bullet.r, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillRect(bullet.x - 1, bullet.y, 2, 18);
+        ctx.fillRect(bullet.x - 1.2, bullet.y - 8, 2.4, 24);
       }
 
       for (const bullet of state.enemyBullets) {
-        ctx.fillStyle = bullet.color;
+        const grad = ctx.createLinearGradient(bullet.x, bullet.y - 12, bullet.x, bullet.y + 12);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(1, bullet.color);
+        ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(bullet.x, bullet.y, bullet.r, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillRect(bullet.x - 1, bullet.y - 12, 2, 12);
+        ctx.fillRect(bullet.x - 1.3, bullet.y - 10, 2.6, 16);
       }
     }
 
@@ -695,12 +734,21 @@
         ctx.globalAlpha = t;
         const grad = ctx.createRadialGradient(ex.x, ex.y, 0, ex.x, ex.y, ex.radius * (2 - t));
         grad.addColorStop(0, '#ffffff');
-        grad.addColorStop(0.3, ex.color);
+        grad.addColorStop(0.25, ex.color);
         grad.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(ex.x, ex.y, ex.radius * (2 - t), 0, Math.PI * 2);
         ctx.fill();
+        ctx.strokeStyle = ex.color;
+        ctx.lineWidth = 2;
+        ex.sparks.forEach(spark => {
+          const dist = (1 - t) * spark.speed;
+          ctx.beginPath();
+          ctx.moveTo(ex.x, ex.y);
+          ctx.lineTo(ex.x + Math.cos(spark.angle) * dist, ex.y + Math.sin(spark.angle) * dist);
+          ctx.stroke();
+        });
         ctx.restore();
       }
     }
