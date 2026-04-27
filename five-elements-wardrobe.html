@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>五行穿搭日历</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+    :root {
+      --bg: #120f0d;
+      --panel: rgba(28, 22, 18, 0.82);
+      --panel-soft: rgba(43, 34, 28, 0.76);
+      --line: rgba(235, 214, 178, 0.14);
+      --ink: #f5ead7;
+      --muted: #cfbfa6;
+      --gold: #d8b06a;
+      --shadow: 0 30px 80px rgba(0,0,0,0.38);
+      --wood: #3c7b56;
+      --fire: #c85b43;
+      --earth: #b98b54;
+      --metal: #b9c0c9;
+      --water: #456f92;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+
+    body {
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: 'IBM Plex Sans', sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(200,91,67,0.16), transparent 24%),
+        radial-gradient(circle at 80% 10%, rgba(69,111,146,0.20), transparent 28%),
+        radial-gradient(circle at 50% 90%, rgba(216,176,106,0.14), transparent 30%),
+        linear-gradient(180deg, #15110e 0%, #0f0c0a 100%);
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 26px 26px;
+      opacity: 0.18;
+    }
+
+    .shell {
+      max-width: 1460px;
+      margin: 0 auto;
+      padding: 28px;
+      display: grid;
+      grid-template-columns: 380px minmax(0, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(20px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(216,176,106,0.32), rgba(255,255,255,0.04), rgba(69,111,146,0.2));
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+
+    .controls {
+      padding: 24px;
+      position: sticky;
+      top: 18px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      letter-spacing: 0.26em;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: var(--gold);
+      margin-bottom: 12px;
+    }
+
+    h1, h2, h3 {
+      font-family: 'Noto Serif SC', serif;
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(30px, 4vw, 44px);
+      line-height: 1.08;
+      margin-bottom: 12px;
+    }
+
+    .intro {
+      margin: 0 0 22px;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 13px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(239,223,198,0.12);
+      background: rgba(255,255,255,0.05);
+      color: var(--ink);
+      outline: none;
+      font-size: 15px;
+      font-family: inherit;
+    }
+
+    input:focus, select:focus {
+      border-color: rgba(216,176,106,0.52);
+      box-shadow: 0 0 0 4px rgba(216,176,106,0.10);
+    }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .button-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 16px;
+      padding: 12px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .primary {
+      background: linear-gradient(135deg, #e0ba77, #b5854d);
+      color: #1e1711;
+      box-shadow: 0 12px 28px rgba(181,133,77,0.25);
+    }
+
+    .secondary {
+      background: rgba(255,255,255,0.06);
+      color: var(--ink);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .micro-note {
+      margin-top: 16px;
+      color: #aa987d;
+      font-size: 12px;
+      line-height: 1.6;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .main {
+      padding: 24px;
+      display: grid;
+      gap: 20px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) 360px;
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .hero-card, .summary-card, .section-card {
+      background: var(--panel-soft);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 24px;
+      padding: 22px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-card::after, .summary-card::after, .section-card::after {
+      content: '';
+      position: absolute;
+      inset: auto -10% -20% auto;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(216,176,106,0.12), transparent 70%);
+      pointer-events: none;
+    }
+
+    .fortune-mark {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 16px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 10px;
+    }
+
+    .big-color {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 18px 0 12px;
+    }
+
+    .swatch-xl {
+      width: 82px;
+      height: 82px;
+      border-radius: 26px;
+      border: 1px solid rgba(255,255,255,0.16);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.26), 0 14px 28px rgba(0,0,0,0.22);
+      flex: 0 0 auto;
+    }
+
+    .big-title {
+      font-size: clamp(26px, 3vw, 38px);
+      line-height: 1.1;
+    }
+
+    .big-subtitle {
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .chip {
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 9px 12px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.04);
+      font-size: 13px;
+    }
+
+    .summary-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .mini-stat {
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .mini-stat .label {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .mini-stat .value {
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .palette-card {
+      border-radius: 20px;
+      padding: 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .palette-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .swatch {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.2);
+      flex: 0 0 auto;
+    }
+
+    .palette-name {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 18px;
+    }
+
+    .meter {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.07);
+      overflow: hidden;
+      margin: 10px 0 8px;
+    }
+
+    .meter > span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+    }
+
+    .muted-copy {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .sections-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .list {
+      list-style: none;
+      padding: 0;
+      margin: 14px 0 0;
+      display: grid;
+      gap: 10px;
+    }
+
+    .list li {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .pillars {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .pillar {
+      padding: 14px;
+      border-radius: 18px;
+      text-align: center;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .pillar small {
+      display: block;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 8px;
+      font-size: 11px;
+    }
+
+    .pillar strong {
+      display: block;
+      font-family: 'Noto Serif SC', serif;
+      font-size: 24px;
+      margin-bottom: 6px;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .links a {
+      color: var(--ink);
+      text-decoration: none;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 13px;
+    }
+
+    .status {
+      color: #e4c995;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 1120px) {
+      .shell, .hero, .sections-grid { grid-template-columns: 1fr; }
+      .controls { position: static; }
+      .palette-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pillars { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 720px) {
+      .shell { padding: 16px; }
+      .controls, .main { padding: 18px; }
+      .row, .palette-grid, .pillars { grid-template-columns: 1fr; }
+      .big-color { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="panel controls">
+      <div class="eyebrow">MVP · BaZi Wardrobe</div>
+      <h1>五行穿搭日历</h1>
+      <p class="intro">输入出生日期与时辰，应用会根据一个<strong>可运行的本地八字/五行启发式模型</strong>，给出当天更适合的主色、辅助色、回避色与穿搭建议。先做成一个能跑的 MVP，后面再把更专业的命理接口接进来。</p>
+
+      <div class="field">
+        <label for="nameInput">名字</label>
+        <input id="nameInput" value="Liang" />
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="birthDateInput">出生日期</label>
+          <input id="birthDateInput" type="date" value="1990-01-01" />
+        </div>
+        <div class="field">
+          <label for="birthTimeInput">出生时间</label>
+          <input id="birthTimeInput" type="time" value="09:30" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="targetDateInput">分析日期</label>
+          <input id="targetDateInput" type="date" />
+        </div>
+        <div class="field">
+          <label for="styleInput">穿搭场景</label>
+          <select id="styleInput">
+            <option value="daily">日常通勤</option>
+            <option value="business">商务稳重</option>
+            <option value="date">约会柔和</option>
+            <option value="creative">创意表达</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button class="primary" id="analyzeBtn">生成今日颜色</button>
+        <button class="secondary" id="todayBtn">切到今天</button>
+      </div>
+
+      <div class="micro-note">
+        说明：当前版本没有接入公开命理 API，所以我先把“八字四柱 + 五行配色 + 每日建议”整成一个本地可用版本。后续如果你确定要做正式产品，我建议再补：<br />
+        1) 更准确的节气/月柱算法；<br />
+        2) 可替换的外部命理引擎；<br />
+        3) 用户历史与穿搭收藏。
+      </div>
+      <div class="status" id="status">状态：等待生成</div>
+    </aside>
+
+    <main class="panel main">
+      <section class="hero">
+        <div class="hero-card">
+          <div class="fortune-mark">Daily Fortune Palette</div>
+          <h2 id="headline">今天更适合偏稳、偏润的颜色</h2>
+          <div class="big-color">
+            <div class="swatch-xl" id="heroSwatch"></div>
+            <div>
+              <div class="big-title" id="primaryColorTitle">墨蓝 / 深水色</div>
+              <div class="big-subtitle" id="primaryColorCopy">用于上衣、外套或主视觉单品，帮助今天的气场更沉稳、更聚焦。</div>
+            </div>
+          </div>
+          <div class="chips" id="chips"></div>
+        </div>
+
+        <div class="summary-card">
+          <h3 style="margin-bottom: 14px;">今日摘要</h3>
+          <div class="summary-grid">
+            <div class="mini-stat">
+              <div class="label">主推荐五行</div>
+              <div class="value" id="favElement">水</div>
+            </div>
+            <div class="mini-stat">
+              <div class="label">今日天干地支</div>
+              <div class="value" id="dayPillar">甲子</div>
+            </div>
+            <div class="mini-stat">
+              <div class="label">命盘偏弱</div>
+              <div class="value" id="weakElement">水</div>
+            </div>
+            <div class="mini-stat">
+              <div class="label">回避色调</div>
+              <div class="value" id="avoidColor">高饱和火色</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <h3>五行颜色权重</h3>
+        <p class="muted-copy">这部分把命盘偏弱项、当天气场和穿搭场景叠加成一个颜色推荐分数。分高不代表“绝对吉”，而是更适合作为今天的主色选择。</p>
+        <div class="palette-grid" id="paletteGrid"></div>
+      </section>
+
+      <section class="sections-grid">
+        <section class="section-card">
+          <h3>四柱速览</h3>
+          <p class="muted-copy">当前 MVP 会计算年、月、日、时四柱，并转换成五行权重，作为穿搭建议基础。</p>
+          <div class="pillars" id="pillars"></div>
+        </section>
+
+        <section class="section-card">
+          <h3>今日穿搭建议</h3>
+          <ul class="list" id="adviceList"></ul>
+        </section>
+      </section>
+
+      <section class="sections-grid">
+        <section class="section-card">
+          <h3>可以继续接入的外部工具</h3>
+          <p class="muted-copy">这几个先放在产品里当“交叉验证入口”。等后面找到稳定接口，再替换成真正的自动调用。</p>
+          <div class="links">
+            <a href="https://yisuan.net/app/bazi-wuxing" target="_blank" rel="noreferrer">易算 · 八字五行</a>
+            <a href="https://www.bazi-lab.com/zh/bazi-calculator" target="_blank" rel="noreferrer">BaZi Lab</a>
+            <a href="https://jiufengshui.com/tools/bazi-analysis/" target="_blank" rel="noreferrer">九风水 AI 八字</a>
+            <a href="https://ijing.life/" target="_blank" rel="noreferrer">I Jing Life</a>
+          </div>
+        </section>
+
+        <section class="section-card">
+          <h3>产品下一步</h3>
+          <ul class="list">
+            <li>补充真太阳时、节气切换、地域时区，提升月柱与时柱准确度。</li>
+            <li>增加“衣柜库存”与“今日可穿单品”匹配，而不只是输出颜色。</li>
+            <li>加入历史记录：哪天穿了什么、当天心情和结果，用来反向校准推荐。</li>
+            <li>如果找到稳定接口，可以把本地规则引擎升级成“本地 + 外部多源交叉”。</li>
+          </ul>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const STEMS = ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'];
+    const BRANCHES = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'];
+    const STEM_ELEMENTS = ['木','木','火','火','土','土','金','金','水','水'];
+    const BRANCH_ELEMENTS = ['水','土','木','木','土','火','火','土','金','金','土','水'];
+    const ELEMENTS = ['木','火','土','金','水'];
+
+    const ELEMENT_META = {
+      木: { color: '#4f8c60', shades: ['松绿', '竹青', '橄榄绿'], accent: '#9ec58f', vibe: '生发、舒展、向上', garment: '衬衫、针织、轻外套' },
+      火: { color: '#bf5b48', shades: ['陶红', '酒红', '朱砂'], accent: '#e4a38d', vibe: '表达、热度、存在感', garment: '内搭、领带、点缀单品' },
+      土: { color: '#b08a57', shades: ['砂金', '卡其', '燕麦'], accent: '#e3c99a', vibe: '稳定、承载、可信赖', garment: '风衣、西裤、针织背心' },
+      金: { color: '#b9c2ce', shades: ['银灰', '米白', '冷白'], accent: '#eef1f6', vibe: '清爽、利落、克制', garment: '西装、衬衫、极简单品' },
+      水: { color: '#446f92', shades: ['墨蓝', '雾霭蓝', '深海灰蓝'], accent: '#96bdd9', vibe: '沉静、聚焦、收敛', garment: '外套、主上衣、围巾' }
+    };
+
+    const GENERATES = { 木: '火', 火: '土', 土: '金', 金: '水', 水: '木' };
+    const CONTROLS = { 木: '土', 火: '金', 土: '水', 金: '木', 水: '火' };
+
+    const SCENE_BONUS = {
+      daily: { 木: 0.3, 火: 0.1, 土: 0.5, 金: 0.4, 水: 0.3 },
+      business: { 木: 0.1, 火: 0.0, 土: 0.5, 金: 0.8, 水: 0.7 },
+      date: { 木: 0.4, 火: 0.7, 土: 0.2, 金: 0.2, 水: 0.3 },
+      creative: { 木: 0.7, 火: 0.8, 土: 0.1, 金: 0.2, 水: 0.4 }
+    };
+
+    const nameInput = document.getElementById('nameInput');
+    const birthDateInput = document.getElementById('birthDateInput');
+    const birthTimeInput = document.getElementById('birthTimeInput');
+    const targetDateInput = document.getElementById('targetDateInput');
+    const styleInput = document.getElementById('styleInput');
+    const statusEl = document.getElementById('status');
+
+    const heroSwatch = document.getElementById('heroSwatch');
+    const headline = document.getElementById('headline');
+    const primaryColorTitle = document.getElementById('primaryColorTitle');
+    const primaryColorCopy = document.getElementById('primaryColorCopy');
+    const chips = document.getElementById('chips');
+    const favElement = document.getElementById('favElement');
+    const dayPillarEl = document.getElementById('dayPillar');
+    const weakElementEl = document.getElementById('weakElement');
+    const avoidColorEl = document.getElementById('avoidColor');
+    const paletteGrid = document.getElementById('paletteGrid');
+    const pillarsEl = document.getElementById('pillars');
+    const adviceList = document.getElementById('adviceList');
+
+    function pad(num) {
+      return String(num).padStart(2, '0');
+    }
+
+    function defaultToday() {
+      const now = new Date();
+      return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    }
+
+    targetDateInput.value = defaultToday();
+
+    function parseDateTime(dateStr, timeStr = '12:00') {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const [hh, mm] = timeStr.split(':').map(Number);
+      return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
+    }
+
+    function toJulianDay(date) {
+      const y = date.getFullYear();
+      const m = date.getMonth() + 1;
+      const d = date.getDate() + (date.getHours() + date.getMinutes() / 60) / 24;
+      const a = Math.floor((14 - m) / 12);
+      const yy = y + 4800 - a;
+      const mm = m + 12 * a - 3;
+      return d + Math.floor((153 * mm + 2) / 5) + 365 * yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) - 32045;
+    }
+
+    function cyclical(index) {
+      const stem = STEMS[((index % 10) + 10) % 10];
+      const branch = BRANCHES[((index % 12) + 12) % 12];
+      return { stem, branch, text: stem + branch };
+    }
+
+    function getYearPillar(date) {
+      let year = date.getFullYear();
+      const beforeLiChun = (date.getMonth() + 1 < 2) || ((date.getMonth() + 1 === 2) && date.getDate() < 4);
+      if (beforeLiChun) year -= 1;
+      return cyclical(year - 1984);
+    }
+
+    function getMonthBranchIndex(date) {
+      const m = date.getMonth() + 1;
+      const d = date.getDate();
+      const checkpoints = [
+        { month: 2, day: 4, branchIndex: 2 },
+        { month: 3, day: 6, branchIndex: 3 },
+        { month: 4, day: 5, branchIndex: 4 },
+        { month: 5, day: 6, branchIndex: 5 },
+        { month: 6, day: 6, branchIndex: 6 },
+        { month: 7, day: 7, branchIndex: 7 },
+        { month: 8, day: 8, branchIndex: 8 },
+        { month: 9, day: 8, branchIndex: 9 },
+        { month: 10, day: 8, branchIndex: 10 },
+        { month: 11, day: 7, branchIndex: 11 },
+        { month: 12, day: 7, branchIndex: 0 },
+        { month: 1, day: 6, branchIndex: 1 }
+      ];
+      let index = 1;
+      for (const point of checkpoints) {
+        if (m > point.month || (m === point.month && d >= point.day)) index = point.branchIndex;
+      }
+      if (m === 1 && d < 6) index = 0;
+      return index;
+    }
+
+    function getMonthPillar(date, yearStemIndex) {
+      const branchIndex = getMonthBranchIndex(date);
+      const monthOrder = branchIndex >= 2 ? branchIndex - 2 : branchIndex + 10;
+      const stemStartMap = { 0: 2, 5: 2, 1: 4, 6: 4, 2: 6, 7: 6, 3: 8, 8: 8, 4: 0, 9: 0 };
+      const stemBase = stemStartMap[yearStemIndex];
+      return { stem: STEMS[(stemBase + monthOrder) % 10], branch: BRANCHES[branchIndex], text: STEMS[(stemBase + monthOrder) % 10] + BRANCHES[branchIndex] };
+    }
+
+    function getDayPillar(date) {
+      const base = new Date(1984, 1, 2, 0, 0, 0, 0);
+      const diff = Math.floor((Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(base.getFullYear(), base.getMonth(), base.getDate())) / 86400000);
+      return cyclical(diff);
+    }
+
+    function getHourBranchIndex(hour, minute) {
+      const totalMinutes = hour * 60 + minute;
+      const shifted = (totalMinutes + 60) % 1440;
+      return Math.floor(shifted / 120) % 12;
+    }
+
+    function getHourPillar(date, dayStemIndex) {
+      const hourIndex = getHourBranchIndex(date.getHours(), date.getMinutes());
+      const stemStartMap = { 0: 0, 5: 0, 1: 2, 6: 2, 2: 4, 7: 4, 3: 6, 8: 6, 4: 8, 9: 8 };
+      const stemBase = stemStartMap[dayStemIndex];
+      const stemIndex = (stemBase + hourIndex) % 10;
+      return { stem: STEMS[stemIndex], branch: BRANCHES[hourIndex], text: STEMS[stemIndex] + BRANCHES[hourIndex] };
+    }
+
+    function scoreNatal(pillars) {
+      const scores = { 木: 0, 火: 0, 土: 0, 金: 0, 水: 0 };
+      pillars.forEach(p => {
+        const stemElement = STEM_ELEMENTS[STEMS.indexOf(p.stem)];
+        const branchElement = BRANCH_ELEMENTS[BRANCHES.indexOf(p.branch)];
+        scores[stemElement] += 1.4;
+        scores[branchElement] += 1;
+      });
+      return scores;
+    }
+
+    function scoreToday(dayPillar) {
+      const scores = { 木: 0, 火: 0, 土: 0, 金: 0, 水: 0 };
+      const stemElement = STEM_ELEMENTS[STEMS.indexOf(dayPillar.stem)];
+      const branchElement = BRANCH_ELEMENTS[BRANCHES.indexOf(dayPillar.branch)];
+      scores[stemElement] += 1.3;
+      scores[branchElement] += 1;
+      scores[GENERATES[stemElement]] += 0.4;
+      return scores;
+    }
+
+    function rankElements(natalScores, dayScores, scene) {
+      const maxNatal = Math.max(...ELEMENTS.map(e => natalScores[e]));
+      const result = {};
+      ELEMENTS.forEach(el => {
+        const deficiency = maxNatal - natalScores[el];
+        const generatedBy = Object.keys(GENERATES).find(key => GENERATES[key] === el);
+        const supportBonus = dayScores[el] * 1.35 + dayScores[generatedBy] * 0.55;
+        const controlPenalty = dayScores[Object.keys(CONTROLS).find(key => CONTROLS[key] === el)] * 0.35;
+        const natalOverPenalty = natalScores[el] > maxNatal - 0.4 ? 0.55 : 0;
+        result[el] = deficiency * 1.2 + supportBonus + (SCENE_BONUS[scene]?.[el] || 0) - controlPenalty - natalOverPenalty;
+      });
+      return result;
+    }
+
+    function sortedElements(scoreMap) {
+      return [...ELEMENTS].sort((a, b) => scoreMap[b] - scoreMap[a]);
+    }
+
+    function buildAdvice(name, primary, accent, avoid, weak, scene) {
+      const sceneCopy = {
+        daily: '日常通勤',
+        business: '商务稳重',
+        date: '约会柔和',
+        creative: '创意表达'
+      }[scene] || '日常';
+
+      return [
+        `${name || '你'}今天主色建议用「${ELEMENT_META[primary].shades[0]}」或「${ELEMENT_META[primary].shades[1]}」，把它放在上半身或外套最有效。`,
+        `辅助色可以放「${ELEMENT_META[accent].shades[0]}」：适合包、鞋、围巾、内搭，避免整套只有一种五行。`,
+        `今天命盘偏弱的是「${weak}」，所以推荐色不是单纯追热闹，而是优先补弱、再考虑当天气场。`,
+        `当前场景是「${sceneCopy}」：${ELEMENT_META[primary].vibe} 会比纯高饱和、纯吸睛更合适。`,
+        `尽量少用「${ELEMENT_META[avoid].shades[0]} / ${ELEMENT_META[avoid].shades[1]}」做主色，尤其别整套大面积铺满。`
+      ];
+    }
+
+    function render(data) {
+      const { ranked, finalScores, natalScores, dayPillar, natalPillars, targetDayPillar, scene } = data;
+      const primary = ranked[0];
+      const accent = ranked[1];
+      const avoid = ranked[ranked.length - 1];
+      const weak = [...ELEMENTS].sort((a, b) => natalScores[a] - natalScores[b])[0];
+
+      heroSwatch.style.background = `linear-gradient(135deg, ${ELEMENT_META[primary].color}, ${ELEMENT_META[primary].accent})`;
+      headline.textContent = `${targetDayPillar.text}日更适合用${primary}来稳住气场，再用${accent}点亮层次`;
+      primaryColorTitle.textContent = `${ELEMENT_META[primary].shades[0]} / ${ELEMENT_META[primary].shades[1]}`;
+      primaryColorCopy.textContent = `${ELEMENT_META[primary].garment} 更适合做今天的主色位。这个选择优先照顾你命盘里偏弱的部分，同时兼顾当天五行流向。`;
+
+      chips.innerHTML = '';
+      [
+        `主五行：${primary}`,
+        `辅助五行：${accent}`,
+        `避免主色：${avoid}`,
+        `场景：${styleInput.options[styleInput.selectedIndex].text}`
+      ].forEach(text => {
+        const chip = document.createElement('div');
+        chip.className = 'chip';
+        chip.textContent = text;
+        chips.appendChild(chip);
+      });
+
+      favElement.textContent = primary;
+      dayPillarEl.textContent = dayPillar.text;
+      weakElementEl.textContent = weak;
+      avoidColorEl.textContent = `${ELEMENT_META[avoid].shades[0]}系`;
+
+      paletteGrid.innerHTML = '';
+      const maxScore = Math.max(...ELEMENTS.map(el => finalScores[el]));
+      ELEMENTS.forEach(el => {
+        const card = document.createElement('div');
+        card.className = 'palette-card';
+        card.innerHTML = `
+          <div class="palette-top">
+            <div class="swatch" style="background:${ELEMENT_META[el].color}"></div>
+            <div>
+              <div class="palette-name">${el}</div>
+              <div class="muted-copy">${ELEMENT_META[el].shades.join(' / ')}</div>
+            </div>
+          </div>
+          <div class="meter"><span style="width:${Math.max(8, (finalScores[el] / maxScore) * 100)}%;background:linear-gradient(90deg, ${ELEMENT_META[el].color}, ${ELEMENT_META[el].accent});"></span></div>
+          <div class="muted-copy">推荐分 ${finalScores[el].toFixed(2)} · 命盘值 ${natalScores[el].toFixed(1)}</div>
+        `;
+        paletteGrid.appendChild(card);
+      });
+
+      pillarsEl.innerHTML = '';
+      const labels = ['年柱', '月柱', '日柱', '时柱'];
+      natalPillars.forEach((pillar, idx) => {
+        const stemElement = STEM_ELEMENTS[STEMS.indexOf(pillar.stem)];
+        const branchElement = BRANCH_ELEMENTS[BRANCHES.indexOf(pillar.branch)];
+        const div = document.createElement('div');
+        div.className = 'pillar';
+        div.innerHTML = `<small>${labels[idx]}</small><strong>${pillar.text}</strong><div class="muted-copy">${stemElement} / ${branchElement}</div>`;
+        pillarsEl.appendChild(div);
+      });
+
+      adviceList.innerHTML = '';
+      buildAdvice(nameInput.value, primary, accent, avoid, weak, scene).forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        adviceList.appendChild(li);
+      });
+    }
+
+    function analyze() {
+      if (!birthDateInput.value) {
+        statusEl.textContent = '状态：请先填写出生日期';
+        return;
+      }
+      const birth = parseDateTime(birthDateInput.value, birthTimeInput.value || '12:00');
+      const target = parseDateTime(targetDateInput.value || defaultToday(), '12:00');
+
+      const yearPillar = getYearPillar(birth);
+      const yearStemIndex = STEMS.indexOf(yearPillar.stem);
+      const monthPillar = getMonthPillar(birth, yearStemIndex);
+      const dayPillar = getDayPillar(birth);
+      const dayStemIndex = STEMS.indexOf(dayPillar.stem);
+      const hourPillar = getHourPillar(birth, dayStemIndex);
+      const natalPillars = [yearPillar, monthPillar, dayPillar, hourPillar];
+
+      const natalScores = scoreNatal(natalPillars);
+      const targetDayPillar = getDayPillar(target);
+      const todayScores = scoreToday(targetDayPillar);
+      const finalScores = rankElements(natalScores, todayScores, styleInput.value);
+      const ranked = sortedElements(finalScores);
+
+      render({ ranked, finalScores, natalScores, dayPillar: targetDayPillar, natalPillars, targetDayPillar, scene: styleInput.value });
+      statusEl.textContent = `状态：已生成 ${targetDateInput.value} 的穿搭建议（本地启发式模型）`;
+    }
+
+    document.getElementById('analyzeBtn').addEventListener('click', analyze);
+    document.getElementById('todayBtn').addEventListener('click', () => {
+      targetDateInput.value = defaultToday();
+      analyze();
+    });
+
+    [birthDateInput, birthTimeInput, targetDateInput, styleInput].forEach(el => el.addEventListener('change', analyze));
+
+    analyze();
+  </script>
+</body>
+</html>
