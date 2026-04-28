@@ -44,10 +44,11 @@ def _normalize_pillars(raw: Dict[str, Any]) -> Dict[str, Optional[str]]:
 
 
 def fetch_bazi_lab_sxtwl(*, birth_year: int, birth_month: int, birth_day: int, birth_hour: int,
-                         birth_minute: int = 0, gender: str = "male", user_name: str = "") -> Dict[str, Any]:
+                         birth_minute: int = 0, gender: str = "male", user_name: str = "",
+                         calendar_type: str = "solar") -> Dict[str, Any]:
     payload = {
         "userData": {
-            "calendarType": "solar",
+            "calendarType": calendar_type,
             "birthYear": birth_year,
             "birthMonth": birth_month,
             "birthDay": birth_day,
@@ -69,9 +70,9 @@ def fetch_bazi_lab_sxtwl(*, birth_year: int, birth_month: int, birth_day: int, b
 
 def fetch_bazi_lab_deepseek(*, birth_year: int, birth_month: int, birth_day: int, birth_hour: int,
                             birth_minute: int = 0, gender: str = "male", user_name: str = "",
-                            location: str = "Beijing") -> Dict[str, Any]:
+                            location: str = "Beijing", calendar_type: str = "solar") -> Dict[str, Any]:
     payload = {
-        "calendarType": "solar",
+        "calendarType": calendar_type,
         "birthYear": birth_year,
         "birthMonth": birth_month,
         "birthDay": birth_day,
@@ -176,6 +177,7 @@ def fetch_all_sources(sample: Dict[str, Any]) -> Dict[str, Any]:
             birth_minute=sample.get("minute", 0),
             gender=sample.get("gender", "male"),
             user_name=sample.get("name", ""),
+            calendar_type=sample.get("calendarType", "solar"),
         ),
         "bazi_lab_deepseek": lambda: fetch_bazi_lab_deepseek(
             birth_year=sample["year"],
@@ -186,6 +188,7 @@ def fetch_all_sources(sample: Dict[str, Any]) -> Dict[str, Any]:
             gender=sample.get("gender", "male"),
             user_name=sample.get("name", ""),
             location=sample.get("location", "Beijing"),
+            calendar_type=sample.get("calendarType", "solar"),
         ),
         "jiufengshui": lambda: fetch_jiufengshui(
             year=sample["year"],

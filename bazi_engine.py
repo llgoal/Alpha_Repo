@@ -53,6 +53,7 @@ class BirthInput:
     gender: str = "male"
     name: str = ""
     calendar_type: str = "solar"
+    day_rollover_hour: int = 0
     location: LocationContext = field(default_factory=LocationContext)
 
 
@@ -114,11 +115,14 @@ def get_month_pillar(dt: datetime, year_pillar: str) -> str:
     return stem + month_branch
 
 
-def get_day_pillar(dt: datetime) -> str:
+def get_day_pillar(dt: datetime, day_rollover_hour: int = 0) -> str:
     # Calibrated against the structured BaZi Lab /api/sxtwl output:
     # 1984-01-31 is 甲子 day in that engine.
     base = datetime(1984, 1, 31)
-    diff_days = (datetime(dt.year, dt.month, dt.day) - base).days
+    day_basis = datetime(dt.year, dt.month, dt.day)
+    if day_rollover_hour == 23 and dt.hour >= 23:
+        day_basis += timedelta(days=1)
+    diff_days = (day_basis - base).days
     return stem_branch(diff_days)
 
 
@@ -156,7 +160,7 @@ def build_chart(birth: BirthInput) -> Dict:
     dt = birth.birth_datetime
     year = get_year_pillar(dt)
     month = get_month_pillar(dt, year)
-    day = get_day_pillar(dt)
+    day = get_day_pillar(dt, birth.day_rollover_hour)
     hour = get_hour_pillar(dt, day)
     pillars = [year, month, day, hour]
     wuxing = count_wuxing(pillars)
@@ -169,6 +173,7 @@ def build_chart(birth: BirthInput) -> Dict:
         "gender": birth.gender,
         "birthDateTime": dt.isoformat(timespec="minutes"),
         "location": asdict(birth.location),
+        "dayRolloverHour": birth.day_rollover_hour,
         "pillars": {
             "year": year,
             "month": month,
@@ -181,6 +186,7 @@ def build_chart(birth: BirthInput) -> Dict:
         "weakestElement": weakest,
         "notes": [
             "Uses solar input only.",
+            f"Day rollover hour = {birth.day_rollover_hour:02d}:00.",
             "Day pillar is calibrated to the BaZi Lab structured source using 1984-01-31 = 甲子.",
             "Month pillar is based on approximate solar-term cutovers.",
             "True solar time is supported via longitude offset.",

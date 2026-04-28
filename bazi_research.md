@@ -68,6 +68,16 @@ So the correct design is:
 - compare hard outputs second
 - generate wardrobe advice last
 
+## Latest progress
+
+- Local engine day pillar has been calibrated to the BaZi Lab structured source using `1984-01-31 = 甲子`.
+- Local engine now supports a configurable day rollover hour:
+  - `0` = midnight rollover
+  - `23` = traditional 子时换日
+- Comparison CLI now emits a conflict report showing consensus and per-source mismatches.
+- Probe result: BaZi Lab `sxtwl` accepts `calendarType: lunar` and returns stable structured JSON.
+- Probe result: 九风水 still appears to interpret the tested input through a lunar-facing flow, even when `useSolarTime` is enabled.
+
 ## Next algorithm upgrades
 
 ### Must-have
