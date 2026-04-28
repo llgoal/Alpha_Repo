@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BaZi App Preview</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+    :root {
+      --bg: #110e0c;
+      --panel: rgba(28, 22, 18, 0.82);
+      --panel-soft: rgba(42, 34, 28, 0.78);
+      --line: rgba(233, 206, 160, 0.18);
+      --ink: #f5ead7;
+      --muted: #ccb89b;
+      --gold: #d9ae68;
+      --jade: #5d8e72;
+      --water: #52789a;
+      --shadow: 0 30px 90px rgba(0, 0, 0, 0.42);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: 'IBM Plex Sans', sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 18%, rgba(217,174,104,0.16), transparent 24%),
+        radial-gradient(circle at 85% 14%, rgba(82,120,154,0.18), transparent 24%),
+        radial-gradient(circle at 50% 88%, rgba(93,142,114,0.14), transparent 30%),
+        linear-gradient(180deg, #16110d 0%, #0e0b09 100%);
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.16;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    .shell {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 28px;
+      display: grid;
+      gap: 24px;
+    }
+
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before, .panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(217,174,104,0.34), rgba(255,255,255,0.03), rgba(82,120,154,0.18));
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+
+    .hero {
+      padding: 30px;
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    h1, h2, h3 { margin: 0; }
+    h1 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(42px, 6vw, 74px);
+      line-height: 0.95;
+      margin-bottom: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      line-height: 1.8;
+      font-size: 15px;
+    }
+
+    .hero-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+      border: 1px solid rgba(233,206,160,0.16);
+      border-radius: 24px;
+      padding: 22px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .hero-card .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--gold);
+      font-weight: 700;
+    }
+
+    .hero-card .big {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+
+    .hero-card .small {
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      border: 1px solid rgba(233,206,160,0.18);
+    }
+
+    .button.primary {
+      background: linear-gradient(135deg, var(--gold), #f4ddaf);
+      color: #1b140f;
+    }
+
+    .button.secondary {
+      background: rgba(255,255,255,0.06);
+      color: var(--ink);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: 24px;
+    }
+
+    .panel { padding: 24px; }
+
+    .section-title {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--gold);
+      margin-bottom: 16px;
+      font-weight: 700;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .feature {
+      background: var(--panel-soft);
+      border: 1px solid rgba(233,206,160,0.12);
+      border-radius: 22px;
+      padding: 18px;
+    }
+
+    .feature h3 {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 22px;
+      margin-bottom: 8px;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
+    .preview-stage {
+      padding: 14px;
+      border-radius: 28px;
+      background: linear-gradient(180deg, rgba(18,13,10,0.95), rgba(27,20,15,0.95));
+      border: 1px solid rgba(233,206,160,0.12);
+    }
+
+    .frame {
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(233,206,160,0.14);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+      background: #120f0d;
+    }
+
+    iframe {
+      width: 100%;
+      height: 920px;
+      border: 0;
+      display: block;
+      background: #120f0d;
+    }
+
+    .footnote {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: rgba(255,255,255,0.06);
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    @media (max-width: 1120px) {
+      .hero, .grid { grid-template-columns: 1fr; }
+      iframe { height: 720px; }
+    }
+
+    @media (max-width: 720px) {
+      .shell { padding: 16px; }
+      .panel, .hero { padding: 18px; }
+      iframe { height: 560px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">BaZi / 五行 / 穿搭预览</div>
+        <h1>五行穿搭<br />Preview Page</h1>
+        <p>
+          This preview wraps the existing BaZi wardrobe app in a cleaner presentation layer so you can review the product direction,
+          share a nicer landing page, and jump straight into the interactive experience without digging through repo files.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="five-elements-wardrobe.html">Open Full App</a>
+          <a class="button secondary" href="#live-preview">Jump to Live Preview</a>
+        </div>
+      </div>
+      <div class="hero-card">
+        <div class="label">Concept</div>
+        <div class="big">东方命理感 + 精品产品感</div>
+        <div class="small">
+          The app blends BaZi-inspired guidance, five-element color logic, and a rich editorial interface. The goal is not “fortune-teller gimmick,”
+          but a premium ritual tool you’d actually want to open each morning.
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <aside class="panel">
+        <div class="section-title">What this preview highlights</div>
+        <div class="stack">
+          <div class="feature">
+            <h3>Visual direction</h3>
+            <p>Dark lacquer palette, gold accents, subtle grid texture, and a calmer luxury tone instead of flashy mysticism.</p>
+          </div>
+          <div class="feature">
+            <h3>Use case</h3>
+            <p>A daily wardrobe companion that turns birth-chart ideas into practical outfit color suggestions and decision support.</p>
+          </div>
+          <div class="feature">
+            <h3>Next layer</h3>
+            <p>We can later wire the local BaZi engine and comparison tools directly into the UI so the page moves from concept demo to usable product.</p>
+          </div>
+        </div>
+        <div class="footnote">
+          File path: <code>bazi/index.html</code><br />
+          Embedded app: <code>bazi/five-elements-wardrobe.html</code>
+        </div>
+      </aside>
+
+      <main class="panel" id="live-preview">
+        <div class="section-title">Live embedded preview</div>
+        <div class="preview-stage">
+          <div class="frame">
+            <iframe src="five-elements-wardrobe.html" title="BaZi wardrobe preview"></iframe>
+          </div>
+        </div>
+        <div class="footnote">
+          If you open this from GitHub Pages or a static file host, the embedded preview should render directly. Locally, opening <code>bazi/index.html</code>
+          will give you the cleanest preview surface.
+        </div>
+      </main>
+    </section>
+  </div>
+</body>
+</html>
