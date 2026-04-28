@@ -93,6 +93,6 @@ So the correct design is:
 - cache external source comparisons
 
 ## Files
-- `bazi_engine.py` → local approximation engine v2
-- `bazi_sources.py` → adapters for external sources
-- `bazi_compare.py` → CLI comparison runner
+- `projects/bazi/bazi_engine.py` → local approximation engine v2
+- `projects/bazi/bazi_sources.py` → adapters for external sources
+- `projects/bazi/bazi_compare.py` → CLI comparison runner
