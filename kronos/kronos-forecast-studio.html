@@ -288,7 +288,7 @@
         </div>
         <div class="field">
           <label for="outputPath">Output file</label>
-          <input id="outputPath" value="Alpha_Repo/projects/kronos/forecasts/qqq-kronos.csv" />
+          <input id="outputPath" value="Alpha_Repo/kronos/forecasts/qqq-kronos.csv" />
         </div>
         <div class="actions">
           <button class="primary" id="buildBtn">Build Command</button>
@@ -303,7 +303,7 @@
         </div>
         <div class="muted">
           The page itself is static, so it does not execute Kronos. Instead, it gives you a reliable command
-          for your local wrapper <code class="inline">projects/kronos/run_kronos_symbol_forecast.py</code>, which is what cron jobs and local workflows can reuse.
+          for your local wrapper <code class="inline">kronos/run_kronos_symbol_forecast.py</code>, which is what cron jobs and local workflows can reuse.
         </div>
       </aside>
 
@@ -381,8 +381,8 @@
       const range = rangeInput.value;
       const lookback = lookbackInput.value || '256';
       const predLen = predLenInput.value || '4';
-      const output = outputPathInput.value.trim() || `Alpha_Repo/projects/kronos/forecasts/${symbol.toLowerCase()}-kronos.csv`;
-      const cmd = `python3 Alpha_Repo/projects/kronos/run_kronos_symbol_forecast.py --symbol ${symbol} --interval ${interval} --range ${range} --lookback ${lookback} --pred-len ${predLen} --output ${output}`;
+      const output = outputPathInput.value.trim() || `Alpha_Repo/kronos/forecasts/${symbol.toLowerCase()}-kronos.csv`;
+      const cmd = `python3 Alpha_Repo/kronos/run_kronos_symbol_forecast.py --symbol ${symbol} --interval ${interval} --range ${range} --lookback ${lookback} --pred-len ${predLen} --output ${output}`;
       commandBox.value = cmd;
       return cmd;
     }
@@ -485,7 +485,7 @@
       btn.addEventListener('click', () => {
         const symbol = btn.dataset.preset;
         symbolInput.value = symbol;
-        outputPathInput.value = `Alpha_Repo/projects/kronos/forecasts/${symbol.toLowerCase()}-kronos.csv`;
+        outputPathInput.value = `Alpha_Repo/kronos/forecasts/${symbol.toLowerCase()}-kronos.csv`;
         buildCommand();
       });
     });
