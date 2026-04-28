@@ -441,11 +441,6 @@
       <h1>五行穿搭日历</h1>
       <p class="intro">输入出生日期与时辰，应用会根据一个<strong>可运行的本地八字/五行启发式模型</strong>，给出当天更适合的主色、辅助色、回避色与穿搭建议。先做成一个能跑的 MVP，后面再把更专业的命理接口接进来。</p>
 
-      <div class="field">
-        <label for="nameInput">名字</label>
-        <input id="nameInput" value="Liang" />
-      </div>
-
       <div class="row">
         <div class="field">
           <label for="birthDateInput">出生日期</label>
@@ -594,7 +589,6 @@
       creative: { 木: 0.7, 火: 0.8, 土: 0.1, 金: 0.2, 水: 0.4 }
     };
 
-    const nameInput = document.getElementById('nameInput');
     const birthDateInput = document.getElementById('birthDateInput');
     const birthTimeInput = document.getElementById('birthTimeInput');
     const targetDateInput = document.getElementById('targetDateInput');
@@ -746,7 +740,7 @@
       return [...ELEMENTS].sort((a, b) => scoreMap[b] - scoreMap[a]);
     }
 
-    function buildAdvice(name, primary, accent, avoid, weak, scene) {
+    function buildAdvice(primary, accent, avoid, weak, scene) {
       const sceneCopy = {
         daily: '日常通勤',
         business: '商务稳重',
@@ -755,7 +749,7 @@
       }[scene] || '日常';
 
       return [
-        `${name || '你'}今天主色建议用「${ELEMENT_META[primary].shades[0]}」或「${ELEMENT_META[primary].shades[1]}」，把它放在上半身或外套最有效。`,
+        `今天主色建议用「${ELEMENT_META[primary].shades[0]}」或「${ELEMENT_META[primary].shades[1]}」，把它放在上半身或外套最有效。`,
         `辅助色可以放「${ELEMENT_META[accent].shades[0]}」：适合包、鞋、围巾、内搭，避免整套只有一种五行。`,
         `今天命盘偏弱的是「${weak}」，所以推荐色不是单纯追热闹，而是优先补弱、再考虑当天气场。`,
         `当前场景是「${sceneCopy}」：${ELEMENT_META[primary].vibe} 会比纯高饱和、纯吸睛更合适。`,
@@ -824,7 +818,7 @@
       });
 
       adviceList.innerHTML = '';
-      buildAdvice(nameInput.value, primary, accent, avoid, weak, scene).forEach(item => {
+      buildAdvice(primary, accent, avoid, weak, scene).forEach(item => {
         const li = document.createElement('li');
         li.textContent = item;
         adviceList.appendChild(li);
