@@ -471,6 +471,7 @@
       <div class="button-row">
         <button class="primary" id="analyzeBtn">生成今日颜色</button>
         <button class="secondary" id="todayBtn">切到今天</button>
+        <button class="secondary" id="validateBtn">交叉验证外部结果</button>
       </div>
 
       <div class="micro-note">
@@ -541,14 +542,11 @@
 
       <section class="sections-grid">
         <section class="section-card">
-          <h3>可以继续接入的外部工具</h3>
-          <p class="muted-copy">这几个先放在产品里当“交叉验证入口”。等后面找到稳定接口，再替换成真正的自动调用。</p>
-          <div class="links">
-            <a href="https://yisuan.net/app/bazi-wuxing" target="_blank" rel="noreferrer">易算 · 八字五行</a>
-            <a href="https://www.bazi-lab.com/zh/bazi-calculator" target="_blank" rel="noreferrer">BaZi Lab</a>
-            <a href="https://jiufengshui.com/tools/bazi-analysis/" target="_blank" rel="noreferrer">九风水 AI 八字</a>
-            <a href="https://ijing.life/" target="_blank" rel="noreferrer">I Jing Life</a>
-          </div>
+          <h3>多源交叉验证</h3>
+          <p class="muted-copy" id="validationSummary">先点击「交叉验证外部结果」，会优先拉取可直接接入的 BaZi Lab SXTWL；同时生成其它外部工具的直达入口，方便手动对照。</p>
+          <div class="palette-grid" id="validationGrid"></div>
+          <div class="links" id="validationLinks"></div>
+          <div class="micro-note" id="validationCommand" style="margin-top:14px;">完整四源本地交叉验证命令会显示在这里。</div>
         </section>
 
         <section class="section-card">
@@ -557,7 +555,7 @@
             <li>补充真太阳时、节气切换、地域时区，提升月柱与时柱准确度。</li>
             <li>增加“衣柜库存”与“今日可穿单品”匹配，而不只是输出颜色。</li>
             <li>加入历史记录：哪天穿了什么、当天心情和结果，用来反向校准推荐。</li>
-            <li>如果找到稳定接口，可以把本地规则引擎升级成“本地 + 外部多源交叉”。</li>
+            <li>如果后面愿意加一个轻量代理层，就能把 DeepSeek / 九风水 / 易算 也做成网页内自动交叉验证，而不只是直达对照。</li>
           </ul>
         </section>
       </section>
@@ -594,6 +592,7 @@
     const targetDateInput = document.getElementById('targetDateInput');
     const styleInput = document.getElementById('styleInput');
     const statusEl = document.getElementById('status');
+    const validateBtn = document.getElementById('validateBtn');
 
     const heroSwatch = document.getElementById('heroSwatch');
     const headline = document.getElementById('headline');
@@ -607,6 +606,11 @@
     const paletteGrid = document.getElementById('paletteGrid');
     const pillarsEl = document.getElementById('pillars');
     const adviceList = document.getElementById('adviceList');
+    const validationSummary = document.getElementById('validationSummary');
+    const validationGrid = document.getElementById('validationGrid');
+    const validationLinks = document.getElementById('validationLinks');
+    const validationCommand = document.getElementById('validationCommand');
+    let latestAnalysis = null;
 
     function pad(num) {
       return String(num).padStart(2, '0');
@@ -757,6 +761,179 @@
       ];
     }
 
+    function currentSample() {
+      const birth = parseDateTime(birthDateInput.value, birthTimeInput.value || '12:00');
+      return {
+        year: birth.getFullYear(),
+        month: birth.getMonth() + 1,
+        day: birth.getDate(),
+        hour: birth.getHours(),
+        minute: birth.getMinutes(),
+        gender: 'male',
+        calendarType: 'solar',
+      };
+    }
+
+    function pillarText(pillars) {
+      if (!pillars) return '—';
+      return ['year', 'month', 'day', 'hour'].map(key => pillars[key] || '—').join(' · ');
+    }
+
+    function comparePillars(localPillars, externalPillars) {
+      const keys = ['year', 'month', 'day', 'hour'];
+      let matched = 0;
+      let compared = 0;
+      keys.forEach(key => {
+        if (localPillars?.[key] && externalPillars?.[key]) {
+          compared += 1;
+          if (localPillars[key] === externalPillars[key]) matched += 1;
+        }
+      });
+      return { matched, compared };
+    }
+
+    function renderValidationCards(cards) {
+      validationGrid.innerHTML = '';
+      cards.forEach(cardData => {
+        const card = document.createElement('div');
+        card.className = 'palette-card';
+        card.innerHTML = `
+          <div class="palette-top">
+            <div class="swatch" style="background:${cardData.color}"></div>
+            <div>
+              <div class="palette-name">${cardData.title}</div>
+              <div class="muted-copy">${cardData.subtitle || ''}</div>
+            </div>
+          </div>
+          <div class="muted-copy">${cardData.body}</div>
+        `;
+        validationGrid.appendChild(card);
+      });
+    }
+
+    function renderValidationLinks(sample) {
+      const yisuanUrl = `https://yisuan.net/app/bazi-wuxing?_year=${sample.year}&_month=${sample.month}&_day=${sample.day}&_hour=${sample.hour}&_sex=1`;
+      const links = [
+        { href: yisuanUrl, label: '易算 · 直接对照' },
+        { href: 'https://www.bazi-lab.com/zh/bazi-calculator', label: 'BaZi Lab · 页面版' },
+        { href: 'https://jiufengshui.com/tools/bazi-analysis/', label: '九风水 · 页面版' },
+      ];
+      validationLinks.innerHTML = '';
+      links.forEach(linkData => {
+        const a = document.createElement('a');
+        a.href = linkData.href;
+        a.target = '_blank';
+        a.rel = 'noreferrer';
+        a.textContent = linkData.label;
+        validationLinks.appendChild(a);
+      });
+
+      validationCommand.textContent = `完整本地四源交叉验证：python3 bazi/bazi_compare.py --date ${birthDateInput.value} --time ${birthTimeInput.value || '12:00'} --location Beijing --json`;
+    }
+
+    async function fetchBaziLabSxtwl(sample) {
+      const response = await fetch('https://www.bazi-lab.com/api/sxtwl', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          userData: {
+            calendarType: sample.calendarType,
+            birthYear: sample.year,
+            birthMonth: sample.month,
+            birthDay: sample.day,
+            birthHour: sample.hour,
+            birthMinute: sample.minute,
+            gender: sample.gender,
+            userName: ''
+          }
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`BaZi Lab SXTWL 请求失败：${response.status}`);
+      }
+      const data = await response.json();
+      return {
+        year: data?.chart?.年柱 || null,
+        month: data?.chart?.月柱 || null,
+        day: data?.chart?.日柱 || null,
+        hour: data?.chart?.时柱 || null,
+      };
+    }
+
+    async function runExternalValidation() {
+      if (!latestAnalysis) analyze();
+      if (!latestAnalysis) return;
+
+      const sample = currentSample();
+      renderValidationLinks(sample);
+      validationSummary.textContent = '正在调用 BaZi Lab SXTWL，并刷新其它外部工具的对照入口…';
+      renderValidationCards([
+        {
+          title: '本地模型',
+          subtitle: '当前已生成',
+          color: '#d9ae68',
+          body: `四柱：${pillarText(latestAnalysis.localPillars)}`,
+        },
+        {
+          title: 'BaZi Lab SXTWL',
+          subtitle: '请求中',
+          color: '#52789a',
+          body: '这是目前网页里可直接自动接入的外部基准源。',
+        },
+      ]);
+
+      try {
+        const sxtwl = await fetchBaziLabSxtwl(sample);
+        const agreement = comparePillars(latestAnalysis.localPillars, sxtwl);
+        validationSummary.textContent = `自动交叉验证完成：BaZi Lab SXTWL 与本地模型 ${agreement.matched}/${agreement.compared} 柱一致。其余外部源已生成直达入口，可继续人工复核。`;
+        renderValidationCards([
+          {
+            title: '本地模型',
+            subtitle: '启发式引擎',
+            color: '#d9ae68',
+            body: `四柱：${pillarText(latestAnalysis.localPillars)}`,
+          },
+          {
+            title: 'BaZi Lab SXTWL',
+            subtitle: `${agreement.matched}/${agreement.compared} 柱一致`,
+            color: '#52789a',
+            body: `四柱：${pillarText(sxtwl)}`,
+          },
+          {
+            title: 'BaZi Lab DeepSeek',
+            subtitle: '本地脚本可接入',
+            color: '#5d8e72',
+            body: '接口本身可用，但 GitHub Pages 浏览器端会被 CORS 限制；仓库里的 bazi_compare.py 已保留完整接入能力。',
+          },
+          {
+            title: '九风水 / 易算',
+            subtitle: '页面对照入口已接入',
+            color: '#8b6752',
+            body: '九风水页面受 SAMEORIGIN 限制、易算页面无可读 CORS 头，所以网页里先做成一键直达对照；本地脚本模式可继续统一比对。',
+          },
+        ]);
+      } catch (error) {
+        validationSummary.textContent = `自动交叉验证部分完成：外部基准请求失败（${error.message}）。其它外部工具的直达入口仍可继续人工对照。`;
+        renderValidationCards([
+          {
+            title: '本地模型',
+            subtitle: '启发式引擎',
+            color: '#d9ae68',
+            body: `四柱：${pillarText(latestAnalysis.localPillars)}`,
+          },
+          {
+            title: '外部工具入口',
+            subtitle: '可继续人工复核',
+            color: '#52789a',
+            body: '下方已生成易算 / BaZi Lab / 九风水入口；如果要在网页里全自动读回所有源，需要后面补一个轻量代理层。',
+          },
+        ]);
+      }
+    }
+
     function render(data) {
       const { ranked, finalScores, natalScores, dayPillar, natalPillars, targetDayPillar, scene } = data;
       const primary = ranked[0];
@@ -823,6 +1000,15 @@
         li.textContent = item;
         adviceList.appendChild(li);
       });
+
+      latestAnalysis = {
+        localPillars: {
+          year: natalPillars[0]?.text,
+          month: natalPillars[1]?.text,
+          day: natalPillars[2]?.text,
+          hour: natalPillars[3]?.text,
+        },
+      };
     }
 
     function analyze() {
@@ -848,6 +1034,22 @@
       const ranked = sortedElements(finalScores);
 
       render({ ranked, finalScores, natalScores, dayPillar: targetDayPillar, natalPillars, targetDayPillar, scene: styleInput.value });
+      renderValidationLinks(currentSample());
+      validationSummary.textContent = '本地结果已更新。点击「交叉验证外部结果」即可拉取外部基准，并打开其它来源做人工对照。';
+      renderValidationCards([
+        {
+          title: '本地模型',
+          subtitle: '已更新',
+          color: '#d9ae68',
+          body: `四柱：${pillarText(latestAnalysis?.localPillars)}`,
+        },
+        {
+          title: '外部验证',
+          subtitle: '待触发',
+          color: '#52789a',
+          body: '点击上方按钮后，会优先自动拉取 BaZi Lab SXTWL，并提供其它来源的一键对照入口。',
+        },
+      ]);
       statusEl.textContent = `状态：已生成 ${targetDateInput.value} 的穿搭建议（本地启发式模型）`;
     }
 
@@ -856,6 +1058,7 @@
       targetDateInput.value = defaultToday();
       analyze();
     });
+    validateBtn.addEventListener('click', runExternalValidation);
 
     [birthDateInput, birthTimeInput, targetDateInput, styleInput].forEach(el => el.addEventListener('change', analyze));
 
