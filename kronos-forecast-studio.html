@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kronos Forecast Studio</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Mono:wght@400;500;700&display=swap');
+
+    :root {
+      --bg: #090b12;
+      --panel: rgba(19, 24, 38, 0.82);
+      --panel-strong: rgba(17, 23, 36, 0.96);
+      --line: rgba(146, 165, 255, 0.16);
+      --text: #eef3ff;
+      --muted: #95a4cd;
+      --cyan: #85ebff;
+      --gold: #ffd88a;
+      --violet: #8f8dff;
+      --green: #67d8aa;
+      --rose: #ff8ca8;
+      --shadow: 0 30px 90px rgba(0, 0, 0, 0.44);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: 'IBM Plex Sans', sans-serif;
+      background:
+        radial-gradient(circle at 10% 15%, rgba(133, 235, 255, 0.12), transparent 24%),
+        radial-gradient(circle at 90% 10%, rgba(143, 141, 255, 0.16), transparent 26%),
+        radial-gradient(circle at 50% 90%, rgba(255, 216, 138, 0.10), transparent 30%),
+        linear-gradient(180deg, #06070c 0%, #0a0d16 52%, #05060a 100%);
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.18;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    .app {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 28px;
+      display: grid;
+      gap: 22px;
+    }
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before, .panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(133,235,255,0.28), rgba(255,255,255,0.02), rgba(143,141,255,0.18));
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+    .hero {
+      padding: 26px;
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .eyebrow {
+      display: inline-flex;
+      font-size: 12px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+    h1, h2, h3 { margin: 0; }
+    h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: clamp(34px, 5vw, 62px);
+      line-height: 0.98;
+      margin-bottom: 12px;
+      letter-spacing: 0.01em;
+    }
+    .hero p {
+      margin: 0;
+      max-width: 780px;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 15px;
+    }
+    .hero-meta {
+      display: grid;
+      gap: 12px;
+      min-width: 280px;
+    }
+    .chip {
+      border-radius: 999px;
+      padding: 10px 14px;
+      border: 1px solid rgba(133,235,255,0.14);
+      background: rgba(255,255,255,0.04);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      font-weight: 700;
+      text-align: center;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 390px minmax(0, 1fr);
+      gap: 22px;
+    }
+    .panel { padding: 22px; }
+    .section-title {
+      font-size: 13px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 14px;
+      font-weight: 700;
+    }
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      border-radius: 16px;
+      border: 1px solid rgba(149, 164, 205, 0.18);
+      padding: 13px 14px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font: inherit;
+      outline: none;
+    }
+    .field textarea {
+      min-height: 110px;
+      resize: vertical;
+      font-family: 'IBM Plex Mono', monospace;
+      line-height: 1.5;
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    button {
+      border: 0;
+      border-radius: 16px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 140ms ease, box-shadow 140ms ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    .primary { background: linear-gradient(135deg, var(--cyan), var(--violet)); color: #08111a; }
+    .secondary { background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid rgba(149,164,205,0.14); }
+    .ghost { background: rgba(255,216,138,0.08); color: var(--gold); border: 1px solid rgba(255,216,138,0.16); }
+    .panel-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 18px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }
+    .metric {
+      padding: 16px;
+      border-radius: 20px;
+      background: var(--panel-strong);
+      border: 1px solid rgba(149,164,205,0.12);
+    }
+    .metric .label { color: var(--muted); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 8px; }
+    .metric .value { font-size: 30px; font-weight: 700; }
+    .stage {
+      position: relative;
+      min-height: 420px;
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(9,13,22,0.98), rgba(12,18,29,0.98));
+      border: 1px solid rgba(149,164,205,0.12);
+      overflow: hidden;
+      padding: 14px;
+    }
+    canvas { width: 100%; height: 100%; min-height: 390px; display: block; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; color: var(--muted); font-size: 13px; }
+    .legend span::before { content: ''; width: 10px; height: 10px; display: inline-block; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+    .legend .history::before { background: var(--cyan); }
+    .legend .forecast::before { background: var(--gold); }
+    .legend .range::before { background: var(--rose); }
+    .card-list { display: grid; gap: 12px; }
+    .card {
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(149,164,205,0.10);
+    }
+    .card strong { display: block; margin-bottom: 8px; }
+    .muted { color: var(--muted); line-height: 1.65; }
+    code.inline {
+      background: rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 2px 6px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+    }
+    @media (max-width: 1120px) {
+      .grid, .panel-grid { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 720px) {
+      .app { padding: 16px; }
+      .row, .metric-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Kronos · Git Deploy UI</div>
+        <h1>Kronos Forecast Studio</h1>
+        <p>
+          A static control surface for your local Kronos workflow. Use it to generate exact run commands,
+          inspect committed forecast CSVs, and visualize near-term market scenarios for symbols like QQQ and NVDA.
+          It is designed to be Git-friendly: no backend required for the UI itself, while the forecasting engine stays local.
+        </p>
+      </div>
+      <div class="hero-meta">
+        <div class="chip">Local model, static UI</div>
+        <div class="chip">Cron-friendly command builder</div>
+        <div class="chip">Reads committed forecast CSVs</div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <aside class="panel">
+        <div class="section-title">Command Builder</div>
+        <div class="field">
+          <label for="symbol">Symbol</label>
+          <input id="symbol" value="QQQ" />
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="interval">Interval</label>
+            <select id="interval">
+              <option>5m</option>
+              <option>15m</option>
+              <option>30m</option>
+              <option>60m</option>
+              <option>1d</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="range">Range</label>
+            <select id="range">
+              <option>5d</option>
+              <option>1mo</option>
+              <option>3mo</option>
+              <option>6mo</option>
+              <option>1y</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="lookback">Lookback</label>
+            <input id="lookback" type="number" value="256" min="32" />
+          </div>
+          <div class="field">
+            <label for="predLen">Prediction bars</label>
+            <input id="predLen" type="number" value="4" min="1" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="outputPath">Output file</label>
+          <input id="outputPath" value="Alpha_Repo/forecasts/qqq-kronos.csv" />
+        </div>
+        <div class="actions">
+          <button class="primary" id="buildBtn">Build Command</button>
+          <button class="secondary" id="copyBtn">Copy Command</button>
+          <button class="ghost" data-preset="QQQ">QQQ Preset</button>
+          <button class="ghost" data-preset="NVDA">NVDA Preset</button>
+          <button class="ghost" data-preset="SPY">SPY Preset</button>
+        </div>
+        <div class="field" style="margin-top: 16px;">
+          <label for="commandBox">Local command</label>
+          <textarea id="commandBox" readonly></textarea>
+        </div>
+        <div class="muted">
+          The page itself is static, so it does not execute Kronos. Instead, it gives you a reliable command
+          for your local wrapper <code class="inline">run_kronos_symbol_forecast.py</code>, which is what cron jobs and local workflows can reuse.
+        </div>
+      </aside>
+
+      <main class="panel panel-grid">
+        <section>
+          <div class="metric-grid">
+            <div class="metric"><div class="label">Loaded file</div><div class="value" id="loadedFile">—</div></div>
+            <div class="metric"><div class="label">Forecast bars</div><div class="value" id="forecastBars">0</div></div>
+            <div class="metric"><div class="label">Last close</div><div class="value" id="lastClose">—</div></div>
+          </div>
+          <div class="stage"><canvas id="chart"></canvas></div>
+          <div class="legend">
+            <span class="history">Historical close</span>
+            <span class="forecast">Forecast close</span>
+            <span class="range">Forecast high-low range</span>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-title">Forecast file loader</div>
+          <div class="field">
+            <label for="forecastSelect">Committed forecast CSV</label>
+            <select id="forecastSelect">
+              <option value="forecasts/kronos-smoke-forecast.csv">forecasts/kronos-smoke-forecast.csv</option>
+              <option value="forecasts/kronos-wrapper-forecast.csv">forecasts/kronos-wrapper-forecast.csv</option>
+            </select>
+          </div>
+          <div class="actions" style="margin-top: 0; margin-bottom: 14px;">
+            <button class="primary" id="loadForecastBtn">Load Selected CSV</button>
+            <button class="secondary" id="loadUploadBtn">Load Uploaded CSV</button>
+          </div>
+          <div class="field">
+            <label for="fileInput">Upload a forecast CSV</label>
+            <input id="fileInput" type="file" accept=".csv" />
+          </div>
+          <div class="card-list">
+            <div class="card">
+              <strong>How this fits the cron jobs</strong>
+              <div class="muted">The daily market jobs can run the local Kronos wrapper for QQQ or NVDA, then mention the output as a low-confidence secondary signal instead of a hard trading call.</div>
+            </div>
+            <div class="card">
+              <strong>Deploy model</strong>
+              <div class="muted">This page is safe to push to GitHub because it is static. The private/local part stays in your runtime: model weights, virtualenv, and actual execution.</div>
+            </div>
+            <div class="card">
+              <strong>Best use</strong>
+              <div class="muted">Use this to visualize the latest forecast files, generate repeatable commands, and give yourself a quick manual override path outside cron.</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <script>
+    const symbolInput = document.getElementById('symbol');
+    const intervalInput = document.getElementById('interval');
+    const rangeInput = document.getElementById('range');
+    const lookbackInput = document.getElementById('lookback');
+    const predLenInput = document.getElementById('predLen');
+    const outputPathInput = document.getElementById('outputPath');
+    const commandBox = document.getElementById('commandBox');
+    const loadedFileEl = document.getElementById('loadedFile');
+    const forecastBarsEl = document.getElementById('forecastBars');
+    const lastCloseEl = document.getElementById('lastClose');
+    const fileInput = document.getElementById('fileInput');
+    const forecastSelect = document.getElementById('forecastSelect');
+    const canvas = document.getElementById('chart');
+    const ctx = canvas.getContext('2d');
+
+    function buildCommand() {
+      const symbol = symbolInput.value.trim().toUpperCase() || 'QQQ';
+      const interval = intervalInput.value;
+      const range = rangeInput.value;
+      const lookback = lookbackInput.value || '256';
+      const predLen = predLenInput.value || '4';
+      const output = outputPathInput.value.trim() || `Alpha_Repo/forecasts/${symbol.toLowerCase()}-kronos.csv`;
+      const cmd = `python3 Alpha_Repo/run_kronos_symbol_forecast.py --symbol ${symbol} --interval ${interval} --range ${range} --lookback ${lookback} --pred-len ${predLen} --output ${output}`;
+      commandBox.value = cmd;
+      return cmd;
+    }
+
+    function parseCsv(text) {
+      const rows = text.trim().split(/\r?\n/);
+      const headers = rows.shift().split(',');
+      const data = rows.map(line => {
+        const cols = line.split(',');
+        const record = {};
+        headers.forEach((h, i) => { record[h] = cols[i]; });
+        return record;
+      }).filter(r => r.open && r.close);
+      return data.map(r => ({
+        ts: r[''] || r.timestamps || '',
+        open: Number(r.open),
+        high: Number(r.high),
+        low: Number(r.low),
+        close: Number(r.close),
+      }));
+    }
+
+    function drawChart(points) {
+      const dpr = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.fillStyle = '#0b111d';
+      ctx.fillRect(0, 0, width, height);
+
+      if (!points.length) return;
+
+      const min = Math.min(...points.map(p => p.low));
+      const max = Math.max(...points.map(p => p.high));
+      const pad = (max - min || 1) * 0.1;
+      const low = min - pad;
+      const high = max + pad;
+      const left = 30, right = width - 20, top = 20, bottom = height - 30;
+
+      const xAt = i => left + (i / Math.max(points.length - 1, 1)) * (right - left);
+      const yAt = v => bottom - ((v - low) / (high - low)) * (bottom - top);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const y = top + ((bottom - top) / 4) * i;
+        ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
+      }
+
+      ctx.strokeStyle = '#ff8ca8';
+      ctx.lineWidth = 2;
+      points.forEach((p, i) => {
+        const x = xAt(i);
+        ctx.beginPath();
+        ctx.moveTo(x, yAt(p.low));
+        ctx.lineTo(x, yAt(p.high));
+        ctx.stroke();
+      });
+
+      ctx.strokeStyle = '#ffd88a';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        const x = xAt(i), y = yAt(p.close);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      ctx.fillStyle = '#95a4cd';
+      ctx.font = '12px IBM Plex Mono';
+      ctx.fillText(high.toFixed(2), 6, top + 4);
+      ctx.fillText(low.toFixed(2), 6, bottom);
+    }
+
+    async function loadCsvFromPath(path) {
+      const res = await fetch(path, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`Failed to load ${path}`);
+      const text = await res.text();
+      const points = parseCsv(text);
+      renderPoints(path, points);
+    }
+
+    function renderPoints(label, points) {
+      loadedFileEl.textContent = label.split('/').pop();
+      forecastBarsEl.textContent = String(points.length);
+      lastCloseEl.textContent = points.length ? points[points.length - 1].close.toFixed(4) : '—';
+      drawChart(points);
+    }
+
+    document.getElementById('buildBtn').addEventListener('click', buildCommand);
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      const cmd = buildCommand();
+      await navigator.clipboard.writeText(cmd);
+    });
+    document.querySelectorAll('[data-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const symbol = btn.dataset.preset;
+        symbolInput.value = symbol;
+        outputPathInput.value = `Alpha_Repo/forecasts/${symbol.toLowerCase()}-kronos.csv`;
+        buildCommand();
+      });
+    });
+    document.getElementById('loadForecastBtn').addEventListener('click', async () => {
+      try { await loadCsvFromPath(forecastSelect.value); } catch (err) { alert(err.message); }
+    });
+    document.getElementById('loadUploadBtn').addEventListener('click', async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      renderPoints(file.name, parseCsv(text));
+    });
+
+    buildCommand();
+    loadCsvFromPath('forecasts/kronos-wrapper-forecast.csv').catch(() => drawChart([]));
+  </script>
+</body>
+</html>
