@@ -236,7 +236,7 @@
         <h1>Kronos Forecast Studio</h1>
         <p>
           A static control surface for your local Kronos workflow. Use it to generate exact run commands,
-          inspect committed forecast CSVs, and visualize near-term market scenarios for symbols like QQQ and NVDA.
+          inspect committed forecast CSVs, and visualize near-term market scenarios for symbols like QQQ and SOFI.
           It is designed to be Git-friendly: no backend required for the UI itself, while the forecasting engine stays local.
         </p>
       </div>
@@ -294,7 +294,7 @@
           <button class="primary" id="buildBtn">Build Command</button>
           <button class="secondary" id="copyBtn">Copy Command</button>
           <button class="ghost" data-preset="QQQ">QQQ Preset</button>
-          <button class="ghost" data-preset="NVDA">NVDA Preset</button>
+          <button class="ghost" data-preset="SOFI">SOFI Preset</button>
           <button class="ghost" data-preset="SPY">SPY Preset</button>
         </div>
         <div class="field" style="margin-top: 16px;">
@@ -330,6 +330,7 @@
               <option value="forecasts/kronos-smoke-forecast.csv">forecasts/kronos-smoke-forecast.csv</option>
               <option value="forecasts/kronos-wrapper-forecast.csv">forecasts/kronos-wrapper-forecast.csv</option>
               <option value="forecasts/qqq-kronos.csv">forecasts/qqq-kronos.csv</option>
+              <option value="forecasts/sofi-kronos.csv">forecasts/sofi-kronos.csv</option>
             </select>
           </div>
           <div class="actions" style="margin-top: 0; margin-bottom: 14px;">
@@ -343,7 +344,7 @@
           <div class="card-list">
             <div class="card">
               <strong>How this fits the cron jobs</strong>
-              <div class="muted">The daily market jobs can run the local Kronos wrapper for QQQ or NVDA, then mention the output as a low-confidence secondary signal instead of a hard trading call.</div>
+              <div class="muted">The daily market jobs can run the local Kronos wrapper for QQQ or SOFI, then mention the output as a low-confidence secondary signal instead of a hard trading call.</div>
             </div>
             <div class="card">
               <strong>Deploy model</strong>
