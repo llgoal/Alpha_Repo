@@ -337,6 +337,7 @@
     .amount-item { font-size: 16px; font-weight: 400; }
     .date-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0; }
     .amount-number-item { font-size: 20px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; }
+    .month-item { font-size: 16px; font-weight: 500; letter-spacing: 0.02em; text-transform: capitalize; }
 
     .statusbar {
       margin-top: 14px;
@@ -437,6 +438,10 @@
         </div>
       </div>
 
+      <div class="field">
+        <label for="monthWordInput">Date month (English)</label>
+        <input id="monthWordInput" type="text" value="February" readonly />
+      </div>
 
       <div class="field">
         <label for="selectedItemInput">Selected block</label>
@@ -445,6 +450,7 @@
           <option value="amountWords">Amount in words</option>
           <option value="amountNumber">Amount number</option>
           <option value="date">Date</option>
+          <option value="month">Month word</option>
         </select>
       </div>
 
@@ -495,6 +501,7 @@
             <div class="item payee-item" id="payeeItem" data-key="payee" style="left: 96px; top: 110px; width: 300px; height: 42px; font-size: 16px;">Sample Payee Name<div class="resize"></div></div>
             <div class="item amount-item" id="amountItem" data-key="amountWords" style="left: 48px; top: 144px; width: 528px; height: 42px; font-size: 16px;">Two thousand three hundred forty-five and 67/100<div class="resize"></div></div>
             <div class="item amount-number-item" id="amountNumberItem" data-key="amountNumber" style="left: 533px; top: 120px; width: 160px; height: 44px; font-size: 20px;">2345.67<div class="resize"></div></div>
+            <div class="item month-item" id="monthItem" data-key="month" style="left: 533px; top: 168px; width: 160px; height: 40px; font-size: 16px;">February<div class="resize"></div></div>
             <div class="item date-item" id="dateItem" data-key="date" style="left: 538px; top: 58px; width: 180px; height: 42px; font-size: 20px;">02042026<div class="resize"></div></div>
           </div>
           <div class="ruler-corner"></div>
@@ -511,6 +518,7 @@
     const amountInput = document.getElementById('amountInput');
     const dateInput = document.getElementById('dateInput');
     const amountWordsInput = document.getElementById('amountWordsInput');
+    const monthWordInput = document.getElementById('monthWordInput');
     const snapInput = document.getElementById('snapInput');
     const zoomInput = document.getElementById('zoomInput');
     const payeeFontInput = document.getElementById('payeeFontInput');
@@ -531,6 +539,7 @@
     const payeeItem = document.getElementById('payeeItem');
     const amountItem = document.getElementById('amountItem');
     const amountNumberItem = document.getElementById('amountNumberItem');
+    const monthItem = document.getElementById('monthItem');
     const dateItem = document.getElementById('dateItem');
 
     const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine'];
@@ -594,22 +603,38 @@
       return `${words.charAt(0).toUpperCase() + words.slice(1)} and ${String(cents).padStart(2, '0')}/100`;
     }
 
+    const MONTHS = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
     function formatDate(raw) {
       const digits = (raw || '').replace(/\D/g, '');
       if (digits.length === 8) return digits;
       return digits || raw || '';
     }
 
+    function formatMonthWord(raw) {
+      const digits = (raw || '').replace(/\D/g, '');
+      if (digits.length < 2) return '';
+      const monthIndex = Number.parseInt(digits.slice(0, 2), 10) - 1;
+      return MONTHS[monthIndex] || '';
+    }
+
     function syncText() {
       const amountWords = formatAmountWords(amountInput.value);
+      const monthWord = formatMonthWord(dateInput.value);
       payeeItem.childNodes[0].nodeValue = payeeInput.value || ' ';
       amountItem.childNodes[0].nodeValue = amountWords;
       amountNumberItem.childNodes[0].nodeValue = amountInput.value || ' ';
+      monthItem.childNodes[0].nodeValue = monthWord || ' ';
       dateItem.childNodes[0].nodeValue = formatDate(dateInput.value) || ' ';
       amountWordsInput.value = amountWords;
+      monthWordInput.value = monthWord;
       payeeItem.style.fontSize = `${payeeFontInput.value || 16}px`;
       amountItem.style.fontSize = `${amountFontInput.value || 16}px`;
       amountNumberItem.style.fontSize = `${amountNumberFontInput.value || 20}px`;
+      monthItem.style.fontSize = `${Math.max(8, Number(dateFontInput.value || 20) - 4)}px`;
       dateItem.style.fontSize = `${dateFontInput.value || 20}px`;
     }
 
@@ -639,6 +664,7 @@
       if (key === 'payee') return payeeItem;
       if (key === 'amountWords') return amountItem;
       if (key === 'amountNumber') return amountNumberItem;
+      if (key === 'month') return monthItem;
       return dateItem;
     }
 
@@ -686,7 +712,7 @@
       syncInspector(item);
     }
 
-    [payeeItem, amountItem, amountNumberItem, dateItem].forEach(item => {
+    [payeeItem, amountItem, amountNumberItem, monthItem, dateItem].forEach(item => {
       item.addEventListener('click', () => activateItem(item));
     });
     function resetLayout() {
@@ -704,6 +730,11 @@
       amountNumberItem.style.top = '120px';
       amountNumberItem.style.width = '160px';
       amountNumberItem.style.height = '44px';
+
+      monthItem.style.left = '533px';
+      monthItem.style.top = '168px';
+      monthItem.style.width = '160px';
+      monthItem.style.height = '40px';
 
       dateItem.style.left = '538px';
       dateItem.style.top = '58px';
