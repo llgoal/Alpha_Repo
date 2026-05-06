@@ -616,9 +616,11 @@
 
     function formatMonthWord(raw) {
       const digits = (raw || '').replace(/\D/g, '');
-      if (digits.length < 2) return '';
-      const monthIndex = Number.parseInt(digits.slice(0, 2), 10) - 1;
-      return MONTHS[monthIndex] || '';
+      if (digits.length < 4) return '';
+      const monthIndex = Number.parseInt(digits.slice(2, 4), 10) - 1;
+      if (monthIndex < 0 || monthIndex > 11) return '';
+      const previousMonthIndex = (monthIndex + 11) % 12;
+      return MONTHS[previousMonthIndex] || '';
     }
 
     function syncText() {
