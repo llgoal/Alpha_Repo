@@ -113,6 +113,33 @@
       font-family: inherit;
     }
 
+    .toggle-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .toggle-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      border: 1px solid #c8d4ea;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.98);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .toggle-option input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: var(--accent);
+      flex: 0 0 auto;
+    }
+
     .field textarea {
       min-height: 104px;
       resize: vertical;
@@ -394,6 +421,22 @@
         <textarea id="amountWordsInput" readonly></textarea>
       </div>
 
+      <div class="field">
+        <label for="monthWordInput">Date month (English)</label>
+        <input id="monthWordInput" type="text" value="February" readonly />
+      </div>
+
+      <div class="field">
+        <label>Canvas visibility</label>
+        <div class="toggle-grid">
+          <label class="toggle-option"><input id="showPayeeInput" type="checkbox" checked /> <span>Payee</span></label>
+          <label class="toggle-option"><input id="showAmountWordsInput" type="checkbox" checked /> <span>Amount in words</span></label>
+          <label class="toggle-option"><input id="showAmountNumberInput" type="checkbox" checked /> <span>Amount number</span></label>
+          <label class="toggle-option"><input id="showDateInput" type="checkbox" checked /> <span>Date</span></label>
+          <label class="toggle-option"><input id="showMonthInput" type="checkbox" checked /> <span>Month word</span></label>
+        </div>
+      </div>
+
       <div class="row">
         <div class="field">
           <label for="snapInput">Grid snap</label>
@@ -436,11 +479,6 @@
           <label for="dateFontInput">Date font</label>
           <input id="dateFontInput" type="number" value="20" min="8" max="96" />
         </div>
-      </div>
-
-      <div class="field">
-        <label for="monthWordInput">Date month (English)</label>
-        <input id="monthWordInput" type="text" value="February" readonly />
       </div>
 
       <div class="field">
@@ -519,6 +557,11 @@
     const dateInput = document.getElementById('dateInput');
     const amountWordsInput = document.getElementById('amountWordsInput');
     const monthWordInput = document.getElementById('monthWordInput');
+    const showPayeeInput = document.getElementById('showPayeeInput');
+    const showAmountWordsInput = document.getElementById('showAmountWordsInput');
+    const showAmountNumberInput = document.getElementById('showAmountNumberInput');
+    const showDateInput = document.getElementById('showDateInput');
+    const showMonthInput = document.getElementById('showMonthInput');
     const snapInput = document.getElementById('snapInput');
     const zoomInput = document.getElementById('zoomInput');
     const payeeFontInput = document.getElementById('payeeFontInput');
@@ -678,6 +721,14 @@
       return dateItem;
     }
 
+    function getVisibilityControlByKey(key) {
+      if (key === 'payee') return showPayeeInput;
+      if (key === 'amountWords') return showAmountWordsInput;
+      if (key === 'amountNumber') return showAmountNumberInput;
+      if (key === 'month') return showMonthInput;
+      return showDateInput;
+    }
+
     function pxToIn(px) {
       return (px / 96).toFixed(2);
     }
@@ -716,7 +767,37 @@
       statusbar.textContent = text;
     }
 
+    function syncVisibility(preferredKey = selectedItemInput.value) {
+      const visibilityMap = {
+        payee: showPayeeInput.checked,
+        amountWords: showAmountWordsInput.checked,
+        amountNumber: showAmountNumberInput.checked,
+        date: showDateInput.checked,
+        month: showMonthInput.checked,
+      };
+
+      [payeeItem, amountItem, amountNumberItem, dateItem, monthItem].forEach(item => {
+        item.style.display = visibilityMap[item.dataset.key] ? 'block' : 'none';
+      });
+
+      const preferredItem = getItemByKey(preferredKey);
+      if (preferredItem && preferredItem.style.display !== 'none') {
+        activateItem(preferredItem);
+        return;
+      }
+
+      const fallbackItem = [payeeItem, amountItem, amountNumberItem, dateItem, monthItem].find(item => item.style.display !== 'none');
+      if (fallbackItem) {
+        activateItem(fallbackItem);
+        return;
+      }
+
+      document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+      setStatus('All canvas fields hidden.');
+    }
+
     function activateItem(item) {
+      if (!item || item.style.display === 'none') return;
       document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
       item.classList.add('active');
       syncInspector(item);
@@ -755,7 +836,7 @@
 
     document.getElementById('resetBtn').addEventListener('click', () => {
       resetLayout();
-      syncInspector();
+      syncVisibility(selectedItemInput.value);
     });
     document.getElementById('printBtn').addEventListener('click', () => window.print());
 
@@ -766,14 +847,17 @@
       setStatus(`Zoom set to ${Math.round(zoom * 100)}%.`);
     });
 
-    selectedItemInput.addEventListener('change', () => syncInspector());
+    selectedItemInput.addEventListener('change', () => syncVisibility(selectedItemInput.value));
     [xInput, yInput, widthInput, heightInput].forEach(input => input.addEventListener('input', applyInspector));
     [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
+    [showPayeeInput, showAmountWordsInput, showAmountNumberInput, showDateInput, showMonthInput].forEach(input => {
+      input.addEventListener('change', () => syncVisibility(selectedItemInput.value));
+    });
 
     dateInput.value = getDefaultDateValue();
     buildRuler();
     syncText();
-    activateItem(payeeItem);
+    syncVisibility('payee');
   </script>
 </body>
 </html>
