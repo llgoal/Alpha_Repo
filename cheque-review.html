@@ -204,6 +204,7 @@
       line-height: 1.55;
     }
 
+    .editor-card,
     .inspector-card {
       margin-top: 8px;
       padding: 16px;
@@ -215,6 +216,15 @@
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 12px 24px rgba(75,111,255,0.08);
     }
 
+    .editor-card {
+      background:
+        linear-gradient(180deg, rgba(61, 185, 124, 0.12), rgba(75,111,255,0.05)),
+        rgba(255,255,255,0.92);
+      border-color: rgba(61, 185, 124, 0.22);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.75), 0 12px 26px rgba(61, 185, 124, 0.08);
+    }
+
+    .editor-title,
     .inspector-title {
       display: block;
       margin-bottom: 14px;
@@ -225,6 +235,11 @@
       font-weight: 800;
     }
 
+    .editor-title {
+      color: #22885c;
+    }
+
+    .editor-card .field:last-child,
     .inspector-card .row:last-child,
     .inspector-card .field:last-child {
       margin-bottom: 0;
@@ -427,19 +442,23 @@
         A generic text placement surface inspired by report layout tools. Enter the three fields, then drag and resize each text block on the page.
       </p>
 
-      <div class="field">
-        <label for="payeeInput">Payee name</label>
-        <input id="payeeInput" type="text" value="Sample Payee Name" maxlength="60" />
-      </div>
+      <div class="editor-card">
+        <span class="editor-title">Editable text fields</span>
 
-      <div class="field">
-        <label for="amountInput">Amount</label>
-        <input id="amountInput" type="text" value="2345.67" maxlength="20" />
-      </div>
+        <div class="field">
+          <label for="payeeInput">Payee name</label>
+          <input id="payeeInput" type="text" value="Sample Payee Name" maxlength="60" />
+        </div>
 
-      <div class="field">
-        <label for="dateInput">Date</label>
-        <input id="dateInput" type="text" value="" maxlength="24" />
+        <div class="field">
+          <label for="amountInput">Amount</label>
+          <input id="amountInput" type="text" value="2345.67" maxlength="20" />
+        </div>
+
+        <div class="field">
+          <label for="dateInput">Date</label>
+          <input id="dateInput" type="text" value="" maxlength="24" />
+        </div>
       </div>
 
       <div class="field">
