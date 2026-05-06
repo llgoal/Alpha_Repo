@@ -386,7 +386,7 @@
 
       <div class="field">
         <label for="dateInput">Date</label>
-        <input id="dateInput" type="text" value="02 04 2026" maxlength="24" />
+        <input id="dateInput" type="text" value="" maxlength="24" />
       </div>
 
       <div class="field">
@@ -608,6 +608,14 @@
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
 
+    function getDefaultDateValue() {
+      const now = new Date();
+      const day = '01';
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = String(now.getFullYear());
+      return `${day}${month}${year}`;
+    }
+
     function formatDate(raw) {
       const digits = (raw || '').replace(/\D/g, '');
       if (digits.length === 8) return digits;
@@ -762,6 +770,7 @@
     [xInput, yInput, widthInput, heightInput].forEach(input => input.addEventListener('input', applyInspector));
     [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
 
+    dateInput.value = getDefaultDateValue();
     buildRuler();
     syncText();
     activateItem(payeeItem);
