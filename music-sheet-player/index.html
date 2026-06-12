@@ -1,0 +1,1238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ScoreLens Studio</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    :root {
+      --ink: #161412;
+      --paper: #f8f3e9;
+      --panel: #fffaf0;
+      --line: #d8ccb9;
+      --muted: #6e6255;
+      --accent: #ca3f2f;
+      --accent-2: #166b6b;
+      --gold: #c79a38;
+      --shadow: 0 18px 55px rgba(42, 30, 18, .16);
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(22, 20, 18, .045) 1px, transparent 1px),
+        linear-gradient(rgba(22, 20, 18, .035) 1px, transparent 1px),
+        radial-gradient(circle at 22% 18%, rgba(202, 63, 47, .14), transparent 30%),
+        radial-gradient(circle at 78% 12%, rgba(22, 107, 107, .13), transparent 28%),
+        var(--paper);
+      background-size: 48px 48px, 48px 48px, auto, auto, auto;
+      font-family: Avenir Next, Candara, Trebuchet MS, sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input, select, textarea {
+      font: inherit;
+    }
+
+    .app {
+      width: min(1480px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 20px 0 26px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: end;
+      padding: 12px 0 18px;
+      border-bottom: 2px solid var(--ink);
+    }
+
+    .brand {
+      display: flex;
+      align-items: end;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .mark {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      color: var(--panel);
+      background: var(--ink);
+      border: 2px solid var(--ink);
+      box-shadow: 5px 5px 0 var(--gold);
+      font-family: Georgia, serif;
+      font-size: 32px;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: Georgia, Iowan Old Style, serif;
+      font-size: clamp(34px, 5vw, 78px);
+      line-height: .88;
+      font-weight: 900;
+    }
+
+    .subtitle {
+      margin: 8px 0 0;
+      color: var(--muted);
+      max-width: 820px;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    .transport {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .icon-btn,
+    .command,
+    .file-label {
+      min-height: 40px;
+      border: 2px solid var(--ink);
+      border-radius: var(--radius);
+      background: var(--panel);
+      color: var(--ink);
+      box-shadow: 3px 3px 0 var(--ink);
+      cursor: pointer;
+      transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+
+    .icon-btn {
+      width: 42px;
+      display: inline-grid;
+      place-items: center;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .command,
+    .file-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .icon-btn:hover,
+    .command:hover,
+    .file-label:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 5px 5px 0 var(--ink);
+      background: #fff3da;
+    }
+
+    .command.primary {
+      background: var(--accent);
+      color: #fff9ed;
+    }
+
+    input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr) 340px;
+      gap: 16px;
+      padding-top: 16px;
+      align-items: start;
+    }
+
+    .rail,
+    .inspector {
+      display: grid;
+      gap: 12px;
+      position: sticky;
+      top: 14px;
+    }
+
+    .panel {
+      border: 2px solid var(--ink);
+      border-radius: var(--radius);
+      background: rgba(255, 250, 240, .88);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--ink);
+      color: var(--panel);
+      font-weight: 900;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: .08em;
+    }
+
+    .panel-body {
+      padding: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+      margin-bottom: 12px;
+    }
+
+    .field:last-child { margin-bottom: 0; }
+
+    label,
+    .label {
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--muted);
+    }
+
+    select,
+    input[type="number"],
+    input[type="range"],
+    textarea {
+      width: 100%;
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      background: #fffdf7;
+      color: var(--ink);
+    }
+
+    select,
+    input[type="number"] {
+      min-height: 38px;
+      padding: 7px 9px;
+    }
+
+    textarea {
+      min-height: 160px;
+      padding: 10px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border: 2px solid var(--ink);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .segmented button {
+      border: 0;
+      border-right: 2px solid var(--ink);
+      background: #fffdf7;
+      min-height: 36px;
+      cursor: pointer;
+      font-weight: 900;
+      color: var(--muted);
+    }
+
+    .segmented button:last-child { border-right: 0; }
+    .segmented button.active {
+      background: var(--accent-2);
+      color: #fff;
+    }
+
+    .toggles {
+      display: grid;
+      gap: 8px;
+    }
+
+    .toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 10px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      background: #fffdf7;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .toggle input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent-2);
+    }
+
+    .stage {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .viewer {
+      position: relative;
+      min-height: 540px;
+      border: 2px solid var(--ink);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(90deg, rgba(22,20,18,.03) 1px, transparent 1px),
+        #fffdf7;
+      background-size: 24px 24px;
+      box-shadow: 9px 9px 0 rgba(22, 20, 18, .95);
+      overflow: auto;
+    }
+
+    canvas {
+      display: block;
+      max-width: 100%;
+    }
+
+    #scoreCanvas {
+      min-width: 760px;
+      min-height: 520px;
+      background: #fffdf7;
+    }
+
+    .drop-hint {
+      position: absolute;
+      inset: 18px;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+      border: 2px dashed rgba(22,20,18,.22);
+      border-radius: var(--radius);
+      color: var(--muted);
+      text-align: center;
+      padding: 20px;
+      font-weight: 800;
+    }
+
+    .drop-hint strong {
+      display: block;
+      color: var(--ink);
+      font-family: Georgia, serif;
+      font-size: 34px;
+      margin-bottom: 8px;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      flex-wrap: wrap;
+    }
+
+    .meter {
+      height: 10px;
+      width: min(260px, 100%);
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      overflow: hidden;
+      background: #fffdf7;
+    }
+
+    .meter div {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width .2s ease;
+    }
+
+    .note-list {
+      display: grid;
+      gap: 8px;
+      max-height: 300px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .note-row {
+      display: grid;
+      grid-template-columns: 58px minmax(84px, 1fr) 86px;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      background: #fffdf7;
+    }
+
+    .note-row input,
+    .note-row select {
+      min-height: 34px;
+      padding: 5px 7px;
+      border-color: #ded2bf;
+      font-size: 13px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 30px;
+      height: 26px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: var(--panel);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .legend span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      flex: 0 0 auto;
+    }
+
+    .swatch.staff { background: var(--accent-2); }
+    .swatch.note { background: var(--accent); }
+    .swatch.cursor { background: var(--gold); }
+
+    .mini-score {
+      width: 100%;
+      height: 118px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      background: #fffdf7;
+      cursor: pointer;
+    }
+
+    .footer {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1180px) {
+      .workspace {
+        grid-template-columns: 300px 1fr;
+      }
+
+      .inspector {
+        grid-column: 1 / -1;
+        position: static;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        width: min(100vw - 18px, 680px);
+        padding-top: 10px;
+      }
+
+      .topbar,
+      .workspace,
+      .inspector {
+        grid-template-columns: 1fr;
+      }
+
+      .transport {
+        justify-content: flex-start;
+      }
+
+      .brand {
+        align-items: center;
+      }
+
+      .mark {
+        width: 44px;
+        height: 44px;
+        font-size: 28px;
+      }
+
+      .rail {
+        position: static;
+      }
+
+      .viewer {
+        min-height: 430px;
+        box-shadow: 5px 5px 0 rgba(22, 20, 18, .95);
+      }
+
+      #scoreCanvas {
+        min-width: 680px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <div class="brand">
+          <div class="mark" aria-hidden="true">♬</div>
+          <div>
+            <h1>ScoreLens Studio</h1>
+            <p class="subtitle">Drop in a clean sheet image, tune the recognition, edit the notes, and audition the line with different instrument voices.</p>
+          </div>
+        </div>
+      </div>
+      <div class="transport" aria-label="Playback controls">
+        <button class="icon-btn" id="rewindBtn" title="Rewind">↺</button>
+        <button class="command primary" id="playBtn" title="Play recognized score">▶ Play</button>
+        <button class="icon-btn" id="stopBtn" title="Stop">■</button>
+        <label class="file-label" for="fileInput" title="Open sheet image">⌁ Open</label>
+        <input id="fileInput" type="file" accept="image/*,.pdf" />
+      </div>
+    </header>
+
+    <section class="workspace">
+      <aside class="rail">
+        <section class="panel">
+          <div class="panel-head">Recognition</div>
+          <div class="panel-body">
+            <div class="field">
+              <span class="label">Source</span>
+              <div class="segmented" role="group" aria-label="Source mode">
+                <button class="active" data-source="upload">Upload</button>
+                <button data-source="demo">Demo</button>
+                <button data-source="camera">Camera</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="threshold">Ink threshold <span id="thresholdValue">128</span></label>
+              <input id="threshold" type="range" min="40" max="230" value="128" />
+            </div>
+            <div class="field">
+              <label for="tempo">Tempo <span id="tempoValue">96</span> BPM</label>
+              <input id="tempo" type="range" min="40" max="180" value="96" />
+            </div>
+            <div class="field">
+              <label for="clef">Clef</label>
+              <select id="clef">
+                <option value="treble">Treble</option>
+                <option value="bass">Bass</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="keyShift">Transpose</label>
+              <input id="keyShift" type="number" min="-24" max="24" value="0" />
+            </div>
+            <div class="toggles">
+              <label class="toggle">Show detection overlay <input id="overlayToggle" type="checkbox" checked /></label>
+              <label class="toggle">Quantize note order <input id="quantizeToggle" type="checkbox" checked /></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">Demo score</div>
+          <div class="panel-body">
+            <canvas class="mini-score" id="demoCanvas" width="540" height="180" title="Load demo score"></canvas>
+          </div>
+        </section>
+      </aside>
+
+      <section class="stage">
+        <div class="viewer" id="viewer">
+          <canvas id="scoreCanvas" width="1120" height="720"></canvas>
+          <div class="drop-hint" id="dropHint">
+            <div><strong>Drop sheet music here</strong>PNG/JPG works best. Simple single-staff melodies recognize most reliably.</div>
+          </div>
+        </div>
+        <div class="status">
+          <span id="statusText">Ready. Load the demo or upload a sheet image.</span>
+          <div class="meter" aria-label="Playback position"><div id="playMeter"></div></div>
+        </div>
+      </section>
+
+      <aside class="inspector">
+        <section class="panel">
+          <div class="panel-head">Instrument</div>
+          <div class="panel-body">
+            <div class="field">
+              <label for="instrument">Voice</label>
+              <select id="instrument">
+                <option value="piano">Piano</option>
+                <option value="violin">Violin</option>
+                <option value="flute">Flute</option>
+                <option value="guitar">Guitar</option>
+                <option value="marimba">Marimba</option>
+                <option value="sine">Pure tone</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="duration">Default duration</label>
+              <select id="duration">
+                <option value="4n">Quarter</option>
+                <option value="8n">Eighth</option>
+                <option value="2n">Half</option>
+                <option value="1n">Whole</option>
+              </select>
+            </div>
+            <div class="legend">
+              <span><i class="swatch staff"></i>staff</span>
+              <span><i class="swatch note"></i>note</span>
+              <span><i class="swatch cursor"></i>playhead</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <span>Recognized notes</span>
+            <button class="icon-btn" id="addNoteBtn" title="Add note">＋</button>
+          </div>
+          <div class="panel-body">
+            <div class="note-list" id="noteList"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">Text score</div>
+          <div class="panel-body">
+            <div class="field">
+              <textarea id="scoreText" spellcheck="false" aria-label="Editable note list"></textarea>
+            </div>
+            <button class="command" id="applyTextBtn">Apply text score</button>
+          </div>
+        </section>
+      </aside>
+    </section>
+
+    <p class="footer">Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
+  </main>
+
+  <script>
+    const els = {
+      file: document.getElementById('fileInput'),
+      canvas: document.getElementById('scoreCanvas'),
+      demoCanvas: document.getElementById('demoCanvas'),
+      viewer: document.getElementById('viewer'),
+      hint: document.getElementById('dropHint'),
+      threshold: document.getElementById('threshold'),
+      thresholdValue: document.getElementById('thresholdValue'),
+      tempo: document.getElementById('tempo'),
+      tempoValue: document.getElementById('tempoValue'),
+      clef: document.getElementById('clef'),
+      keyShift: document.getElementById('keyShift'),
+      overlay: document.getElementById('overlayToggle'),
+      quantize: document.getElementById('quantizeToggle'),
+      status: document.getElementById('statusText'),
+      playMeter: document.getElementById('playMeter'),
+      play: document.getElementById('playBtn'),
+      stop: document.getElementById('stopBtn'),
+      rewind: document.getElementById('rewindBtn'),
+      instrument: document.getElementById('instrument'),
+      duration: document.getElementById('duration'),
+      noteList: document.getElementById('noteList'),
+      addNote: document.getElementById('addNoteBtn'),
+      scoreText: document.getElementById('scoreText'),
+      applyText: document.getElementById('applyTextBtn')
+    };
+
+    const ctx = els.canvas.getContext('2d', { willReadFrequently: true });
+    const demoCtx = els.demoCanvas.getContext('2d');
+    const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    let sourceImage = null;
+    let detected = { staffLines: [], notes: [] };
+    let activeSynth = null;
+    let meterTimer = null;
+    let cursorIndex = -1;
+    let cameraStream = null;
+    let cameraVideo = null;
+
+    function setStatus(text) {
+      els.status.textContent = text;
+    }
+
+    function midiToNote(midi) {
+      const clamped = Math.max(21, Math.min(108, Math.round(midi)));
+      return NOTE_NAMES[((clamped % 12) + 12) % 12] + (Math.floor(clamped / 12) - 1);
+    }
+
+    function noteToMidi(note) {
+      const match = String(note).trim().match(/^([A-Ga-g])([#b]?)(-?\d)$/);
+      if (!match) return 60;
+      const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[match[1].toUpperCase()];
+      const accidental = match[2] === '#' ? 1 : match[2] === 'b' ? -1 : 0;
+      return (Number(match[3]) + 1) * 12 + base + accidental;
+    }
+
+    function pitchFromY(y, staffLines, clef) {
+      if (staffLines.length < 5) return 60;
+      const spacing = medianDiff(staffLines);
+      const bottomLine = staffLines[4];
+      const step = Math.round((bottomLine - y) / (spacing / 2));
+      const baseMidi = clef === 'bass' ? 43 : 64;
+      const majorScaleSteps = [0, 2, 4, 5, 7, 9, 11];
+      const octaveShift = Math.floor(step / 7);
+      const degree = ((step % 7) + 7) % 7;
+      return baseMidi + octaveShift * 12 + majorScaleSteps[degree];
+    }
+
+    function medianDiff(lines) {
+      const diffs = [];
+      for (let i = 1; i < lines.length; i++) diffs.push(lines[i] - lines[i - 1]);
+      diffs.sort((a, b) => a - b);
+      return diffs[Math.floor(diffs.length / 2)] || 12;
+    }
+
+    function drawDemo(targetCtx = demoCtx, scale = 1) {
+      const w = targetCtx.canvas.width;
+      const h = targetCtx.canvas.height;
+      targetCtx.clearRect(0, 0, w, h);
+      targetCtx.fillStyle = '#fffdf7';
+      targetCtx.fillRect(0, 0, w, h);
+      targetCtx.strokeStyle = '#161412';
+      targetCtx.lineWidth = 2 * scale;
+      const top = h * .3;
+      const gap = 14 * scale;
+      for (let i = 0; i < 5; i++) {
+        targetCtx.beginPath();
+        targetCtx.moveTo(28 * scale, top + i * gap);
+        targetCtx.lineTo(w - 28 * scale, top + i * gap);
+        targetCtx.stroke();
+      }
+      targetCtx.font = `${42 * scale}px Georgia`;
+      targetCtx.fillStyle = '#161412';
+      targetCtx.fillText('𝄞', 38 * scale, top + gap * 3.8);
+      const notes = [
+        [120, 4], [176, 3], [232, 2], [288, 1], [344, 0],
+        [400, 1], [456, 2], [512, 3]
+      ];
+      for (const [x, pos] of notes) {
+        const y = top + gap * (4 - pos / 2);
+        targetCtx.save();
+        targetCtx.translate(x * scale, y);
+        targetCtx.rotate(-0.22);
+        targetCtx.beginPath();
+        targetCtx.ellipse(0, 0, 10 * scale, 7 * scale, 0, 0, Math.PI * 2);
+        targetCtx.fill();
+        targetCtx.restore();
+        targetCtx.beginPath();
+        targetCtx.moveTo((x + 9) * scale, y);
+        targetCtx.lineTo((x + 9) * scale, y - 48 * scale);
+        targetCtx.stroke();
+      }
+    }
+
+    function loadDemo() {
+      sourceImage = null;
+      els.canvas.width = 1120;
+      els.canvas.height = 720;
+      drawDemo(ctx, 2);
+      els.hint.style.display = 'none';
+      recognize();
+    }
+
+    function drawSource() {
+      if (!sourceImage) return;
+      const maxW = 1280;
+      const ratio = Math.min(1, maxW / sourceImage.width);
+      els.canvas.width = Math.max(760, Math.round(sourceImage.width * ratio));
+      els.canvas.height = Math.max(520, Math.round(sourceImage.height * ratio));
+      ctx.fillStyle = '#fffdf7';
+      ctx.fillRect(0, 0, els.canvas.width, els.canvas.height);
+      const drawnW = Math.round(sourceImage.width * ratio);
+      const drawnH = Math.round(sourceImage.height * ratio);
+      ctx.drawImage(sourceImage, 0, 0, drawnW, drawnH);
+      els.hint.style.display = 'none';
+    }
+
+    function recognize() {
+      if (sourceImage) drawSource();
+      else if (detected.staffLines.length) loadDemoBaseOnly();
+      const img = ctx.getImageData(0, 0, els.canvas.width, els.canvas.height);
+      const threshold = Number(els.threshold.value);
+      const rowInk = new Array(els.canvas.height).fill(0);
+      const colInk = new Array(els.canvas.width).fill(0);
+      const data = img.data;
+
+      for (let y = 0; y < els.canvas.height; y++) {
+        for (let x = 0; x < els.canvas.width; x++) {
+          const i = (y * els.canvas.width + x) * 4;
+          const gray = data[i] * .299 + data[i + 1] * .587 + data[i + 2] * .114;
+          if (gray < threshold) {
+            rowInk[y]++;
+            colInk[x]++;
+          }
+        }
+      }
+
+      const rowCutoff = els.canvas.width * .18;
+      const rawLines = [];
+      for (let y = 0; y < rowInk.length; y++) {
+        if (rowInk[y] > rowCutoff) rawLines.push(y);
+      }
+
+      const groups = groupRuns(rawLines, 3);
+      const staffLines = groups
+        .map(run => Math.round((run[0] + run[run.length - 1]) / 2))
+        .filter((line, idx, arr) => idx === 0 || line - arr[idx - 1] > 5)
+        .slice(0, 5);
+
+      const notes = detectNotes(img, staffLines, threshold);
+      detected = { staffLines, notes };
+      if (els.quantize.checked) detected.notes.sort((a, b) => a.x - b.x);
+      syncNotesToText();
+      renderNoteList();
+      redrawOverlay();
+      setStatus(`Detected ${detected.notes.length} notes and ${staffLines.length} staff lines.`);
+    }
+
+    function groupRuns(values, maxGap) {
+      const groups = [];
+      let current = [];
+      for (const value of values) {
+        if (!current.length || value - current[current.length - 1] <= maxGap) {
+          current.push(value);
+        } else {
+          groups.push(current);
+          current = [value];
+        }
+      }
+      if (current.length) groups.push(current);
+      return groups;
+    }
+
+    function detectNotes(img, staffLines, threshold) {
+      if (staffLines.length < 5) return [];
+      const w = img.width;
+      const h = img.height;
+      const data = img.data;
+      const top = Math.max(0, staffLines[0] - 55);
+      const bottom = Math.min(h - 1, staffLines[4] + 55);
+      const spacing = medianDiff(staffLines);
+      const blobs = [];
+      const visited = new Uint8Array(w * h);
+
+      function isInk(x, y) {
+        const i = (y * w + x) * 4;
+        const gray = data[i] * .299 + data[i + 1] * .587 + data[i + 2] * .114;
+        if (gray >= threshold) return false;
+        const nearStaff = staffLines.some(line => Math.abs(y - line) <= 2);
+        return !nearStaff;
+      }
+
+      for (let y = top; y <= bottom; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = y * w + x;
+          if (visited[idx] || !isInk(x, y)) continue;
+          const q = [[x, y]];
+          visited[idx] = 1;
+          let minX = x, maxX = x, minY = y, maxY = y, count = 0;
+          while (q.length) {
+            const [cx, cy] = q.pop();
+            count++;
+            minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);
+            minY = Math.min(minY, cy); maxY = Math.max(maxY, cy);
+            for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+              const nx = cx + dx, ny = cy + dy;
+              const nidx = ny * w + nx;
+              if (nx < 0 || ny < top || nx >= w || ny > bottom || visited[nidx]) continue;
+              if (isInk(nx, ny)) {
+                visited[nidx] = 1;
+                q.push([nx, ny]);
+              }
+            }
+          }
+          const bw = maxX - minX + 1;
+          const bh = maxY - minY + 1;
+          const area = bw * bh;
+          const density = count / area;
+          const noteSize = spacing * .65;
+          const afterClefZone = minX > Math.max(80, w * .12);
+          if (bw >= noteSize && bw <= spacing * 2.7 && bh >= noteSize && bh <= spacing * 2.7 && density > .22 && afterClefZone) {
+            blobs.push({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, w: bw, h: bh, count });
+          }
+        }
+      }
+
+      const merged = [];
+      for (const blob of blobs.sort((a, b) => a.x - b.x)) {
+        const prior = merged.find(n => Math.abs(n.x - blob.x) < spacing * 1.25 && Math.abs(n.y - blob.y) < spacing * 2.25);
+        if (prior) {
+          const total = prior.count + blob.count;
+          prior.x = (prior.x * prior.count + blob.x * blob.count) / total;
+          prior.y = (prior.y * prior.count + blob.y * blob.count) / total;
+          prior.w = Math.max(prior.w, blob.w);
+          prior.h = Math.max(prior.h, blob.h);
+          prior.count = total;
+        } else {
+          merged.push(blob);
+        }
+      }
+
+      const shift = Number(els.keyShift.value || 0);
+      return merged.slice(0, 64).map((blob, idx) => ({
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + idx),
+        x: blob.x,
+        y: blob.y,
+        note: midiToNote(pitchFromY(blob.y, staffLines, els.clef.value) + shift),
+        duration: els.duration.value,
+        confidence: Math.min(99, Math.round(blob.count / (spacing * spacing) * 80))
+      }));
+    }
+
+    function redrawOverlay() {
+      if (sourceImage) drawSource();
+      else if (!sourceImage && detected.staffLines.length) loadDemoBaseOnly();
+      if (!els.overlay.checked) return;
+      ctx.save();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(22,107,107,.75)';
+      for (const y of detected.staffLines) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(els.canvas.width, y);
+        ctx.stroke();
+      }
+      detected.notes.forEach((note, idx) => {
+        ctx.fillStyle = idx === cursorIndex ? 'rgba(199,154,56,.9)' : 'rgba(202,63,47,.88)';
+        ctx.beginPath();
+        ctx.arc(note.x, note.y, 13, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#161412';
+        ctx.font = 'bold 14px ui-monospace, monospace';
+        ctx.fillText(note.note, note.x + 15, note.y + 5);
+      });
+      ctx.restore();
+    }
+
+    function loadDemoBaseOnly() {
+      drawDemo(ctx, 2);
+      els.hint.style.display = 'none';
+    }
+
+    function renderNoteList() {
+      els.noteList.innerHTML = '';
+      detected.notes.forEach((note, idx) => {
+        const row = document.createElement('div');
+        row.className = 'note-row';
+        row.innerHTML = `
+          <span class="badge">${idx + 1}</span>
+          <input value="${note.note}" aria-label="Note ${idx + 1} pitch" />
+          <select aria-label="Note ${idx + 1} duration">
+            <option value="8n">8th</option>
+            <option value="4n">Quarter</option>
+            <option value="2n">Half</option>
+            <option value="1n">Whole</option>
+          </select>
+        `;
+        const input = row.querySelector('input');
+        const select = row.querySelector('select');
+        select.value = note.duration || '4n';
+        input.addEventListener('change', () => {
+          note.note = input.value.trim() || 'C4';
+          syncNotesToText();
+        });
+        select.addEventListener('change', () => {
+          note.duration = select.value;
+          syncNotesToText();
+        });
+        els.noteList.appendChild(row);
+      });
+    }
+
+    function syncNotesToText() {
+      els.scoreText.value = detected.notes.map(n => `${n.note} ${n.duration || '4n'}`).join('\n');
+    }
+
+    function applyTextScore() {
+      const lines = els.scoreText.value.split(/\n+/).map(line => line.trim()).filter(Boolean);
+      detected.notes = lines.map((line, idx) => {
+        const [note = 'C4', duration = els.duration.value] = line.split(/\s+/);
+        const existing = detected.notes[idx] || {};
+        return {
+          id: existing.id || String(Date.now() + idx),
+          x: existing.x || 110 + idx * 45,
+          y: existing.y || 160,
+          note,
+          duration,
+          confidence: existing.confidence || 100
+        };
+      });
+      renderNoteList();
+      redrawOverlay();
+      setStatus(`Applied ${detected.notes.length} notes from text.`);
+    }
+
+    function makeSynth() {
+      if (activeSynth) activeSynth.dispose();
+      const voice = els.instrument.value;
+      const common = { volume: -8 };
+      if (voice === 'piano') {
+        activeSynth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'triangle8' },
+          envelope: { attack: .01, decay: .22, sustain: .26, release: .9 },
+          ...common
+        }).toDestination();
+      } else if (voice === 'violin') {
+        activeSynth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'sawtooth' },
+          envelope: { attack: .12, decay: .18, sustain: .7, release: .8 },
+          ...common
+        }).toDestination();
+      } else if (voice === 'flute') {
+        activeSynth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'sine' },
+          envelope: { attack: .08, decay: .08, sustain: .65, release: .55 },
+          ...common
+        }).toDestination();
+      } else if (voice === 'guitar') {
+        activeSynth = new Tone.PolySynth(Tone.PluckSynth, { volume: -7 }).toDestination();
+      } else if (voice === 'marimba') {
+        activeSynth = new Tone.PolySynth(Tone.MembraneSynth, { volume: -12 }).toDestination();
+      } else {
+        activeSynth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'sine' },
+          envelope: { attack: .02, decay: .08, sustain: .5, release: .35 },
+          ...common
+        }).toDestination();
+      }
+      return activeSynth;
+    }
+
+    async function playScore() {
+      if (!detected.notes.length) {
+        setStatus('No notes to play yet.');
+        return;
+      }
+      await Tone.start();
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+      clearInterval(meterTimer);
+      cursorIndex = -1;
+      Tone.Transport.bpm.value = Number(els.tempo.value);
+      const synth = makeSynth();
+      let time = 0;
+      const events = [];
+      for (let i = 0; i < detected.notes.length; i++) {
+        const n = detected.notes[i];
+        events.push({ time, note: n.note, duration: n.duration || els.duration.value, index: i });
+        time += Tone.Time(n.duration || els.duration.value).toSeconds();
+      }
+      events.forEach(event => {
+        Tone.Transport.schedule(t => {
+          cursorIndex = event.index;
+          redrawOverlay();
+          synth.triggerAttackRelease(event.note, event.duration, t);
+        }, event.time);
+      });
+      Tone.Transport.scheduleOnce(() => {
+        cursorIndex = -1;
+        redrawOverlay();
+        els.playMeter.style.width = '100%';
+        setStatus('Playback complete.');
+      }, time + .05);
+      const total = Math.max(.1, time);
+      meterTimer = setInterval(() => {
+        const pct = Math.min(100, (Tone.Transport.seconds / total) * 100);
+        els.playMeter.style.width = pct + '%';
+      }, 80);
+      els.playMeter.style.width = '0%';
+      setStatus(`Playing ${detected.notes.length} notes as ${els.instrument.options[els.instrument.selectedIndex].text}.`);
+      Tone.Transport.start();
+    }
+
+    function stopScore() {
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+      clearInterval(meterTimer);
+      cursorIndex = -1;
+      els.playMeter.style.width = '0%';
+      redrawOverlay();
+      setStatus('Stopped.');
+    }
+
+    async function handleImageFile(file) {
+      if (!file) return;
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        await renderPdfFirstPage(file);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        sourceImage = img;
+        drawSource();
+        recognize();
+      };
+      img.src = URL.createObjectURL(file);
+    }
+
+    async function renderPdfFirstPage(file) {
+      if (!window.pdfjsLib) {
+        setStatus('PDF renderer is still loading. Try the PDF again in a moment.');
+        return;
+      }
+      try {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const bytes = await file.arrayBuffer();
+        const pdf = await window.pdfjsLib.getDocument({ data: bytes }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 2 });
+        const offscreen = document.createElement('canvas');
+        offscreen.width = viewport.width;
+        offscreen.height = viewport.height;
+        await page.render({ canvasContext: offscreen.getContext('2d'), viewport }).promise;
+        const img = new Image();
+        img.onload = () => {
+          sourceImage = img;
+          drawSource();
+          recognize();
+          setStatus(`Rendered page 1 of ${file.name} and detected ${detected.notes.length} notes.`);
+        };
+        img.src = offscreen.toDataURL('image/png');
+      } catch (error) {
+        setStatus('Could not render that PDF. A PNG or JPG export will work better.');
+      }
+    }
+
+    async function toggleCameraCapture() {
+      if (cameraStream && cameraVideo) {
+        sourceImage = null;
+        els.canvas.width = cameraVideo.videoWidth || 1120;
+        els.canvas.height = cameraVideo.videoHeight || 720;
+        ctx.drawImage(cameraVideo, 0, 0, els.canvas.width, els.canvas.height);
+        const img = new Image();
+        img.onload = () => {
+          sourceImage = img;
+          stopCamera();
+          recognize();
+        };
+        img.src = els.canvas.toDataURL('image/png');
+        return;
+      }
+
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        cameraVideo = document.createElement('video');
+        cameraVideo.srcObject = cameraStream;
+        cameraVideo.muted = true;
+        cameraVideo.playsInline = true;
+        await cameraVideo.play();
+        els.hint.style.display = 'none';
+        setStatus('Camera preview active. Press Camera again to capture the sheet.');
+        const paint = () => {
+          if (!cameraStream || !cameraVideo) return;
+          els.canvas.width = cameraVideo.videoWidth || 1120;
+          els.canvas.height = cameraVideo.videoHeight || 720;
+          ctx.drawImage(cameraVideo, 0, 0, els.canvas.width, els.canvas.height);
+          requestAnimationFrame(paint);
+        };
+        paint();
+      } catch (error) {
+        setStatus('Camera needs localhost/HTTPS permission. Use the upload button if permission is blocked.');
+      }
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+      cameraStream = null;
+      cameraVideo = null;
+    }
+
+    els.file.addEventListener('change', event => handleImageFile(event.target.files[0]));
+    els.threshold.addEventListener('input', () => {
+      els.thresholdValue.textContent = els.threshold.value;
+      recognize();
+    });
+    els.tempo.addEventListener('input', () => {
+      els.tempoValue.textContent = els.tempo.value;
+      Tone.Transport.bpm.value = Number(els.tempo.value);
+    });
+    [els.clef, els.keyShift, els.duration, els.quantize].forEach(el => el.addEventListener('change', recognize));
+    els.overlay.addEventListener('change', redrawOverlay);
+    els.play.addEventListener('click', playScore);
+    els.stop.addEventListener('click', stopScore);
+    els.rewind.addEventListener('click', () => {
+      Tone.Transport.seconds = 0;
+      els.playMeter.style.width = '0%';
+      cursorIndex = -1;
+      redrawOverlay();
+    });
+    els.instrument.addEventListener('change', () => setStatus(`Instrument set to ${els.instrument.options[els.instrument.selectedIndex].text}.`));
+    els.addNote.addEventListener('click', () => {
+      detected.notes.push({
+        id: String(Date.now()),
+        x: 120 + detected.notes.length * 36,
+        y: detected.staffLines[2] || 180,
+        note: 'C4',
+        duration: els.duration.value,
+        confidence: 100
+      });
+      syncNotesToText();
+      renderNoteList();
+      redrawOverlay();
+    });
+    els.applyText.addEventListener('click', applyTextScore);
+    els.demoCanvas.addEventListener('click', loadDemo);
+    document.querySelectorAll('[data-source]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-source]').forEach(b => b.classList.remove('active'));
+        button.classList.add('active');
+        if (button.dataset.source === 'demo') loadDemo();
+        if (button.dataset.source === 'camera') toggleCameraCapture();
+      });
+    });
+
+    els.viewer.addEventListener('dragover', event => {
+      event.preventDefault();
+      els.viewer.style.outline = '4px solid var(--accent)';
+    });
+    els.viewer.addEventListener('dragleave', () => {
+      els.viewer.style.outline = '';
+    });
+    els.viewer.addEventListener('drop', event => {
+      event.preventDefault();
+      els.viewer.style.outline = '';
+      handleImageFile(event.dataTransfer.files[0]);
+    });
+
+    drawDemo();
+    loadDemo();
+  </script>
+</body>
+</html>
