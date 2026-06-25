@@ -480,7 +480,7 @@
 
       <div class="field">
         <label for="monthWordInput">Date month (English)</label>
-        <input id="monthWordInput" type="text" value="February" readonly />
+        <input id="monthWordInput" type="text" value="" maxlength="24" />
       </div>
 
       <div class="field">
@@ -640,6 +640,7 @@
     const amountNumberItem = document.getElementById('amountNumberItem');
     const monthItem = document.getElementById('monthItem');
     const dateItem = document.getElementById('dateItem');
+    let monthWordManuallyEdited = false;
 
     const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine'];
     const TEENS = ['ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
@@ -730,16 +731,22 @@
       return MONTHS[previousMonthIndex] || '';
     }
 
-    function syncText() {
+    function syncMonthDefault(force = false) {
+      if (force || !monthWordManuallyEdited) {
+        monthWordInput.value = formatMonthWord(dateInput.value);
+      }
+    }
+
+    function syncText(options = {}) {
+      if (options.refreshMonthDefault) syncMonthDefault();
       const amountWords = formatAmountWords(amountInput.value);
-      const monthWord = formatMonthWord(dateInput.value);
+      const monthWord = monthWordInput.value;
       payeeItem.childNodes[0].nodeValue = payeeInput.value || ' ';
       amountItem.childNodes[0].nodeValue = amountWords;
       amountNumberItem.childNodes[0].nodeValue = amountInput.value || ' ';
       monthItem.childNodes[0].nodeValue = monthWord || ' ';
       dateItem.childNodes[0].nodeValue = formatDate(dateInput.value) || ' ';
       amountWordsInput.value = amountWords;
-      monthWordInput.value = monthWord;
       payeeItem.style.fontSize = `${payeeFontInput.value || 16}px`;
       amountItem.style.fontSize = `${amountFontInput.value || 16}px`;
       amountNumberItem.style.fontSize = `${amountNumberFontInput.value || 20}px`;
@@ -873,12 +880,18 @@
 
     selectedItemInput.addEventListener('change', () => syncVisibility(selectedItemInput.value));
     [xInput, yInput, widthInput, heightInput].forEach(input => input.addEventListener('input', applyInspector));
-    [payeeInput, amountInput, dateInput, payeeFontInput, amountFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', syncText));
+    [payeeInput, amountInput, payeeFontInput, amountFontInput, amountNumberFontInput, dateFontInput].forEach(input => input.addEventListener('input', () => syncText()));
+    dateInput.addEventListener('input', () => syncText({ refreshMonthDefault: true }));
+    monthWordInput.addEventListener('input', () => {
+      monthWordManuallyEdited = true;
+      syncText();
+    });
     [showPayeeInput, showAmountWordsInput, showAmountNumberInput, showDateInput, showMonthInput].forEach(input => {
       input.addEventListener('change', () => syncVisibility(selectedItemInput.value));
     });
 
     dateInput.value = getDefaultDateValue();
+    syncMonthDefault(true);
     buildRuler();
     syncText();
     syncVisibility('payee');
