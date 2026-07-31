@@ -677,6 +677,11 @@
     let detected = { staffLines: [], notes: [] };
     let activeSynth = null;
     let meterTimer = null;
+    let audioCtx = null;
+    let playbackTimers = [];
+    let activeAudioNodes = [];
+    let playbackStartedAt = 0;
+    let playbackDuration = 0;
     let cursorIndex = -1;
     let cameraStream = null;
     let cameraVideo = null;
@@ -696,6 +701,101 @@
       const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[match[1].toUpperCase()];
       const accidental = match[2] === '#' ? 1 : match[2] === 'b' ? -1 : 0;
       return (Number(match[3]) + 1) * 12 + base + accidental;
+    }
+
+    function noteToFrequency(note) {
+      return 440 * Math.pow(2, (noteToMidi(note) - 69) / 12);
+    }
+
+    function durationToSeconds(duration) {
+      const quarter = 60 / Number(els.tempo.value || 96);
+      const beats = {
+        '8n': .5,
+        '4n': 1,
+        '2n': 2,
+        '1n': 4
+      }[duration] || 1;
+      return quarter * beats;
+    }
+
+    async function getAudioContext() {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) throw new Error('Web Audio is not supported in this browser.');
+      if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContextCtor();
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      return audioCtx;
+    }
+
+    function clearPlaybackTimers() {
+      playbackTimers.forEach(timer => clearTimeout(timer));
+      playbackTimers = [];
+      clearInterval(meterTimer);
+      meterTimer = null;
+    }
+
+    function stopActiveAudioNodes() {
+      activeAudioNodes.forEach(node => {
+        try {
+          node.stop(0);
+        } catch (error) {
+          // The oscillator may already have stopped naturally.
+        }
+      });
+      activeAudioNodes = [];
+    }
+
+    function playBrowserNote(note, duration, when) {
+      const voice = els.instrument.value;
+      const now = audioCtx.currentTime;
+      const start = Math.max(now + .02, when);
+      const length = Math.max(.08, durationToSeconds(duration) * .92);
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter();
+      const frequency = noteToFrequency(note);
+
+      const settings = {
+        piano: { type: 'triangle', attack: .01, decay: .14, sustain: .18, release: .5, level: .24, filter: 2600 },
+        violin: { type: 'sawtooth', attack: .09, decay: .12, sustain: .34, release: .42, level: .16, filter: 1800 },
+        flute: { type: 'sine', attack: .04, decay: .08, sustain: .26, release: .32, level: .2, filter: 3200 },
+        guitar: { type: 'triangle', attack: .005, decay: .18, sustain: .08, release: .36, level: .28, filter: 1700 },
+        marimba: { type: 'sine', attack: .004, decay: .11, sustain: .04, release: .26, level: .32, filter: 2200 },
+        sine: { type: 'sine', attack: .01, decay: .06, sustain: .22, release: .2, level: .18, filter: 4000 }
+      }[voice] || { type: 'sine', attack: .01, decay: .06, sustain: .22, release: .2, level: .18, filter: 4000 };
+
+      osc.type = settings.type;
+      osc.frequency.setValueAtTime(frequency, start);
+      if (voice === 'piano' || voice === 'marimba') {
+        osc.detune.setValueAtTime(-4, start);
+      }
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(settings.filter, start);
+      filter.Q.setValueAtTime(1.1, start);
+
+      const attackEnd = start + settings.attack;
+      const decayEnd = attackEnd + settings.decay;
+      const releaseStart = start + length;
+      const end = releaseStart + settings.release;
+      gain.gain.cancelScheduledValues(start);
+      gain.gain.setValueAtTime(.0001, start);
+      gain.gain.exponentialRampToValueAtTime(settings.level, attackEnd);
+      gain.gain.exponentialRampToValueAtTime(Math.max(.001, settings.level * settings.sustain), decayEnd);
+      gain.gain.setValueAtTime(Math.max(.001, settings.level * settings.sustain), releaseStart);
+      gain.gain.exponentialRampToValueAtTime(.0001, end);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(start);
+      osc.stop(end + .02);
+      activeAudioNodes.push(osc);
+      osc.addEventListener('ended', () => {
+        activeAudioNodes = activeAudioNodes.filter(node => node !== osc);
+        osc.disconnect();
+        filter.disconnect();
+        gain.disconnect();
+      }, { once: true });
     }
 
     function pitchFromY(y, staffLines, clef) {
@@ -1038,47 +1138,52 @@
         setStatus('No notes to play yet.');
         return;
       }
-      await Tone.start();
-      Tone.Transport.stop();
-      Tone.Transport.cancel();
-      clearInterval(meterTimer);
+      try {
+        await getAudioContext();
+      } catch (error) {
+        setStatus('This browser cannot play Web Audio.');
+        return;
+      }
+      clearPlaybackTimers();
+      stopActiveAudioNodes();
       cursorIndex = -1;
-      Tone.Transport.bpm.value = Number(els.tempo.value);
-      const synth = makeSynth();
       let time = 0;
       const events = [];
       for (let i = 0; i < detected.notes.length; i++) {
         const n = detected.notes[i];
         events.push({ time, note: n.note, duration: n.duration || els.duration.value, index: i });
-        time += Tone.Time(n.duration || els.duration.value).toSeconds();
+        time += durationToSeconds(n.duration || els.duration.value);
       }
       events.forEach(event => {
-        Tone.Transport.schedule(t => {
+        const timer = setTimeout(() => {
           cursorIndex = event.index;
           redrawOverlay();
-          synth.triggerAttackRelease(event.note, event.duration, t);
-        }, event.time);
+          playBrowserNote(event.note, event.duration, audioCtx.currentTime + .02);
+        }, event.time * 1000);
+        playbackTimers.push(timer);
       });
-      Tone.Transport.scheduleOnce(() => {
+      const completeTimer = setTimeout(() => {
         cursorIndex = -1;
         redrawOverlay();
         els.playMeter.style.width = '100%';
         setStatus('Playback complete.');
-      }, time + .05);
-      const total = Math.max(.1, time);
+        clearPlaybackTimers();
+      }, (time + .08) * 1000);
+      playbackTimers.push(completeTimer);
+      playbackStartedAt = performance.now();
+      playbackDuration = Math.max(.1, time);
       meterTimer = setInterval(() => {
-        const pct = Math.min(100, (Tone.Transport.seconds / total) * 100);
+        const elapsed = (performance.now() - playbackStartedAt) / 1000;
+        const pct = Math.min(100, (elapsed / playbackDuration) * 100);
         els.playMeter.style.width = pct + '%';
       }, 80);
       els.playMeter.style.width = '0%';
       setStatus(`Playing ${detected.notes.length} notes as ${els.instrument.options[els.instrument.selectedIndex].text}.`);
-      Tone.Transport.start();
     }
 
     function stopScore() {
-      Tone.Transport.stop();
-      Tone.Transport.cancel();
-      clearInterval(meterTimer);
+      clearPlaybackTimers();
+      stopActiveAudioNodes();
       cursorIndex = -1;
       els.playMeter.style.width = '0%';
       redrawOverlay();
@@ -1181,14 +1286,14 @@
     });
     els.tempo.addEventListener('input', () => {
       els.tempoValue.textContent = els.tempo.value;
-      Tone.Transport.bpm.value = Number(els.tempo.value);
     });
     [els.clef, els.keyShift, els.duration, els.quantize].forEach(el => el.addEventListener('change', recognize));
     els.overlay.addEventListener('change', redrawOverlay);
     els.play.addEventListener('click', playScore);
     els.stop.addEventListener('click', stopScore);
     els.rewind.addEventListener('click', () => {
-      Tone.Transport.seconds = 0;
+      clearPlaybackTimers();
+      stopActiveAudioNodes();
       els.playMeter.style.width = '0%';
       cursorIndex = -1;
       redrawOverlay();
