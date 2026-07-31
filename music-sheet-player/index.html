@@ -527,7 +527,7 @@
           <div>
             <h1>ScoreLens Studio</h1>
             <p class="subtitle">Drop in a clean sheet image, tune the recognition, edit the notes, and audition the line with different instrument voices.</p>
-            <div class="version" title="App version">v2026.07.30-omr.2</div>
+            <div class="version" title="App version">v2026.07.30-piano.1</div>
           </div>
         </div>
       </div>
@@ -654,7 +654,7 @@
       </aside>
     </section>
 
-    <p class="footer">ScoreLens Studio v2026.07.30-omr.2. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
+    <p class="footer">ScoreLens Studio v2026.07.30-piano.1. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
   </main>
 
   <script>
@@ -759,8 +759,113 @@
       activeAudioNodes = [];
     }
 
+    function makeNoiseBuffer(seconds) {
+      const sampleRate = audioCtx.sampleRate;
+      const frameCount = Math.max(1, Math.floor(seconds * sampleRate));
+      const buffer = audioCtx.createBuffer(1, frameCount, sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < frameCount; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      return buffer;
+    }
+
+    function playPianoNote(note, duration, when) {
+      const now = audioCtx.currentTime;
+      const start = Math.max(now + .02, when);
+      const frequency = noteToFrequency(note);
+      const noteLength = Math.max(.12, durationToSeconds(duration) * .9);
+      const release = Math.min(2.2, Math.max(.9, noteLength * 1.45));
+      const end = start + noteLength + release;
+      const master = audioCtx.createGain();
+      const toneFilter = audioCtx.createBiquadFilter();
+      const bodyFilter = audioCtx.createBiquadFilter();
+      const level = Math.max(.1, Math.min(.24, 260 / Math.max(180, frequency)));
+
+      toneFilter.type = 'lowpass';
+      toneFilter.frequency.setValueAtTime(Math.min(7600, Math.max(2600, frequency * 13)), start);
+      toneFilter.frequency.exponentialRampToValueAtTime(Math.min(4200, Math.max(1100, frequency * 5.5)), start + .45);
+      toneFilter.Q.setValueAtTime(.55, start);
+
+      bodyFilter.type = 'peaking';
+      bodyFilter.frequency.setValueAtTime(Math.min(900, Math.max(180, frequency * 1.6)), start);
+      bodyFilter.Q.setValueAtTime(.85, start);
+      bodyFilter.gain.setValueAtTime(3.5, start);
+
+      master.gain.setValueAtTime(.0001, start);
+      master.gain.exponentialRampToValueAtTime(level, start + .006);
+      master.gain.exponentialRampToValueAtTime(level * .32, start + .18);
+      master.gain.exponentialRampToValueAtTime(.0001, end);
+
+      const partials = [
+        { ratio: 1, gain: .95, decay: 1.7, detune: -3 },
+        { ratio: 2.01, gain: .38, decay: 1.05, detune: 2 },
+        { ratio: 3.03, gain: .18, decay: .72, detune: 4 },
+        { ratio: 4.08, gain: .09, decay: .5, detune: -5 },
+        { ratio: 5.12, gain: .045, decay: .34, detune: 7 }
+      ];
+
+      partials.forEach(partial => {
+        const osc = audioCtx.createOscillator();
+        const partialGain = audioCtx.createGain();
+        const partialEnd = Math.min(end, start + noteLength + partial.decay);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(frequency * partial.ratio, start);
+        osc.detune.setValueAtTime(partial.detune + 5, start);
+        osc.detune.linearRampToValueAtTime(partial.detune, start + .08);
+        partialGain.gain.setValueAtTime(.0001, start);
+        partialGain.gain.exponentialRampToValueAtTime(partial.gain, start + .005);
+        partialGain.gain.exponentialRampToValueAtTime(.0001, partialEnd);
+        osc.connect(partialGain);
+        partialGain.connect(master);
+        osc.start(start);
+        osc.stop(partialEnd + .03);
+        activeAudioNodes.push(osc);
+        osc.addEventListener('ended', () => {
+          activeAudioNodes = activeAudioNodes.filter(node => node !== osc);
+          osc.disconnect();
+          partialGain.disconnect();
+        }, { once: true });
+      });
+
+      const hammer = audioCtx.createBufferSource();
+      const hammerGain = audioCtx.createGain();
+      const hammerFilter = audioCtx.createBiquadFilter();
+      hammer.buffer = makeNoiseBuffer(.035);
+      hammerFilter.type = 'highpass';
+      hammerFilter.frequency.setValueAtTime(Math.max(900, frequency * 2.5), start);
+      hammerGain.gain.setValueAtTime(.0001, start);
+      hammerGain.gain.exponentialRampToValueAtTime(level * .22, start + .002);
+      hammerGain.gain.exponentialRampToValueAtTime(.0001, start + .045);
+      hammer.connect(hammerFilter);
+      hammerFilter.connect(hammerGain);
+      hammerGain.connect(master);
+      hammer.start(start);
+      hammer.stop(start + .05);
+      activeAudioNodes.push(hammer);
+      hammer.addEventListener('ended', () => {
+        activeAudioNodes = activeAudioNodes.filter(node => node !== hammer);
+        hammer.disconnect();
+        hammerFilter.disconnect();
+        hammerGain.disconnect();
+      }, { once: true });
+
+      master.connect(bodyFilter);
+      bodyFilter.connect(toneFilter);
+      toneFilter.connect(audioCtx.destination);
+      setTimeout(() => {
+        master.disconnect();
+        bodyFilter.disconnect();
+        toneFilter.disconnect();
+      }, Math.max(80, (end - audioCtx.currentTime + .1) * 1000));
+    }
+
     function playBrowserNote(note, duration, when) {
       const voice = els.instrument.value;
+      if (voice === 'piano') {
+        playPianoNote(note, duration, when);
+        return;
+      }
       const now = audioCtx.currentTime;
       const start = Math.max(now + .02, when);
       const length = Math.max(.08, durationToSeconds(duration) * .92);
