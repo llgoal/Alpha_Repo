@@ -527,7 +527,7 @@
           <div>
             <h1>ScoreLens Studio</h1>
             <p class="subtitle">Drop in a clean sheet image, tune the recognition, edit the notes, and audition the line with different instrument voices.</p>
-            <div class="version" title="App version">v2026.07.30-omr.1</div>
+            <div class="version" title="App version">v2026.07.30-omr.2</div>
           </div>
         </div>
       </div>
@@ -654,7 +654,7 @@
       </aside>
     </section>
 
-    <p class="footer">ScoreLens Studio v2026.07.30-omr.1. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
+    <p class="footer">ScoreLens Studio v2026.07.30-omr.2. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
   </main>
 
   <script>
@@ -971,7 +971,8 @@
         const awayFromFrame = lines[0] > h * .04 && lines[4] < h * .94;
         const separated = !systems.length || lines[0] - systems[systems.length - 1].lines[4] > avg * 2.2;
         if (looksLikeStaff && awayFromFrame && separated) {
-          systems.push({ index: systems.length, lines });
+          const bounds = staffBounds(data, w, lines, threshold);
+          systems.push({ index: systems.length, lines, xStart: bounds.xStart, xEnd: bounds.xEnd });
           i += 4;
         }
       }
@@ -991,7 +992,42 @@
         .map(run => Math.round((run[0] + run[run.length - 1]) / 2))
         .filter((line, idx, arr) => idx === 0 || line - arr[idx - 1] > 5)
         .slice(0, 5);
-      return lines.length === 5 ? [{ index: 0, lines }] : [];
+      if (lines.length !== 5) return [];
+      const bounds = staffBounds(data, w, lines, threshold);
+      return [{ index: 0, lines, xStart: bounds.xStart, xEnd: bounds.xEnd }];
+    }
+
+    function staffBounds(data, width, lines, threshold) {
+      const starts = [];
+      const ends = [];
+      for (const y of lines) {
+        let run = 0;
+        let runStart = 0;
+        let bestStart = 0;
+        let bestEnd = width - 1;
+        let bestRun = 0;
+        for (let x = 0; x < width; x++) {
+          if (grayAt(data, width, x, y) < threshold) {
+            if (!run) runStart = x;
+            run++;
+            if (run > bestRun) {
+              bestRun = run;
+              bestStart = runStart;
+              bestEnd = x;
+            }
+          } else {
+            run = 0;
+          }
+        }
+        if (bestRun > 20) {
+          starts.push(bestStart);
+          ends.push(bestEnd);
+        }
+      }
+      return {
+        xStart: starts.length ? Math.min(...starts) : 0,
+        xEnd: ends.length ? Math.max(...ends) : width - 1
+      };
     }
 
     function groupRuns(values, maxGap) {
@@ -1068,7 +1104,7 @@
           }
         }
 
-        for (const scanNote of scanNoteHeads(data, w, h, staffLines, system.index, threshold)) {
+        for (const scanNote of scanNoteHeads(data, w, h, system, threshold)) {
           blobs.push(scanNote);
         }
 
@@ -1102,47 +1138,51 @@
       return allNotes.slice(0, 96);
     }
 
-    function scanNoteHeads(data, w, h, staffLines, systemIndex, threshold) {
+    function scanNoteHeads(data, w, h, system, threshold) {
+      const staffLines = system.lines;
       const spacing = medianDiff(staffLines);
-      const rx = Math.max(5, spacing * .82);
-      const ry = Math.max(4, spacing * .58);
-      const stepX = Math.max(2, Math.round(spacing * .34));
-      const startX = Math.max(90, Math.round(w * .13));
-      const endX = Math.round(w * .93);
-      const ySlots = [];
-      for (let step = -5; step <= 16; step++) {
-        const y = staffLines[4] - step * spacing / 2;
-        if (y >= staffLines[0] - spacing * 3 && y <= staffLines[4] + spacing * 2.2) ySlots.push(y);
-      }
+      const rx = Math.max(4, spacing * 1.05);
+      const ry = Math.max(3, spacing * .85);
+      const stepX = 2;
+      const startX = Math.max(Math.round(system.xStart + spacing * 6), Math.round(w * .08));
+      const endX = Math.min(Math.round(system.xEnd - spacing * 1.5), Math.round(w * .93));
+      const minY = Math.max(0, Math.round(staffLines[0] - spacing * .65));
+      const maxY = Math.min(h - 1, Math.round(staffLines[4] + spacing * 2.2));
       const candidates = [];
 
-      for (const y of ySlots) {
+      for (let y = minY; y <= maxY; y++) {
         for (let x = startX; x < endX; x += stepX) {
           let ink = 0;
           let total = 0;
-          const minX = Math.max(0, Math.round(x - rx));
-          const maxX = Math.min(w - 1, Math.round(x + rx));
-          const minY = Math.max(0, Math.round(y - ry));
-          const maxY = Math.min(h - 1, Math.round(y + ry));
-          for (let yy = minY; yy <= maxY; yy++) {
-            const nearStaff = staffLines.some(line => Math.abs(yy - line) <= Math.max(1, spacing * .16));
-            for (let xx = minX; xx <= maxX; xx++) {
+          let leftInk = 0;
+          let rightInk = 0;
+          const scanMinX = Math.max(0, Math.round(x - rx));
+          const scanMaxX = Math.min(w - 1, Math.round(x + rx));
+          const scanMinY = Math.max(0, Math.round(y - ry));
+          const scanMaxY = Math.min(h - 1, Math.round(y + ry));
+          for (let yy = scanMinY; yy <= scanMaxY; yy++) {
+            const nearStaff = staffLines.some(line => Math.abs(yy - line) <= Math.max(1, spacing * .12));
+            for (let xx = scanMinX; xx <= scanMaxX; xx++) {
               const dx = (xx - x) / rx;
               const dy = (yy - y) / ry;
               if (dx * dx + dy * dy > 1) continue;
               total++;
-              if (!nearStaff && grayAt(data, w, xx, yy) < threshold) ink++;
+              if (!nearStaff && grayAt(data, w, xx, yy) < threshold) {
+                ink++;
+                if (xx < x) leftInk++;
+                else rightInk++;
+              }
             }
           }
-          if (ink >= Math.max(8, total * .18)) {
-            candidates.push({ x, y, w: rx * 2, h: ry * 2, count: ink, systemIndex, staffLines });
+          if (ink >= Math.max(5, total * .1) && leftInk >= 2 && rightInk >= 2) {
+            candidates.push({ x, y, w: rx * 2, h: ry * 2, count: ink, systemIndex: system.index, staffLines });
           }
         }
       }
 
       const kept = [];
       for (const candidate of candidates.sort((a, b) => b.count - a.count)) {
-        const duplicate = kept.some(note => Math.abs(note.x - candidate.x) < spacing * 1.6 && Math.abs(note.y - candidate.y) < spacing * 1.25);
+        const duplicate = kept.some(note => Math.abs(note.x - candidate.x) < spacing * 2.1 && Math.abs(note.y - candidate.y) < spacing * 1.7);
         if (!duplicate) kept.push(candidate);
         if (kept.length >= 36) break;
       }
