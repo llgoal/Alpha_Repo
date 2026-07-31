@@ -528,7 +528,7 @@
           <div>
             <h1>ScoreLens Studio</h1>
             <p class="subtitle">Drop in a clean sheet image, tune the recognition, edit the notes, and audition the line with different instrument voices.</p>
-            <div class="version" title="App version">v2026.07.30-soundfont.1</div>
+            <div class="version" title="App version">v2026.07.31-soundfont.2</div>
           </div>
         </div>
       </div>
@@ -655,7 +655,7 @@
       </aside>
     </section>
 
-    <p class="footer">ScoreLens Studio v2026.07.30-soundfont.1. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
+    <p class="footer">ScoreLens Studio v2026.07.31-soundfont.2. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
   </main>
 
   <script>
@@ -689,6 +689,7 @@
     const ctx = els.canvas.getContext('2d', { willReadFrequently: true });
     const demoCtx = els.demoCanvas.getContext('2d');
     const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const SOUNDFONT_NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
     let sourceImage = null;
     let detected = { staffLines: [], notes: [] };
     let activeSynth = null;
@@ -727,6 +728,11 @@
       return 440 * Math.pow(2, (noteToMidi(note) - 69) / 12);
     }
 
+    function noteToSoundFontName(note) {
+      const midi = Math.max(21, Math.min(108, noteToMidi(note)));
+      return SOUNDFONT_NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
+    }
+
     function durationToSeconds(duration) {
       const quarter = 60 / Number(els.tempo.value || 96);
       const beats = {
@@ -748,7 +754,7 @@
 
     async function getSoundFontPiano(notes = []) {
       if (!soundFontAvailable || !window.Soundfont) return null;
-      const normalizedNotes = [...new Set(notes.map(note => String(note).trim()).filter(noteToMidi).sort())];
+      const normalizedNotes = [...new Set(notes.map(noteToSoundFontName).sort())];
       const notesKey = normalizedNotes.join(',');
       if (soundFontPiano && soundFontPianoNotesKey === notesKey) return soundFontPiano;
       if (!soundFontPianoPromise) {
@@ -898,7 +904,7 @@
       }
       const start = Math.max(audioCtx.currentTime + .02, when);
       const length = Math.max(.12, durationToSeconds(duration) * .96);
-      const player = soundFontPiano.play(note, start, {
+      const player = soundFontPiano.play(noteToSoundFontName(note), start, {
         duration: length,
         gain: .78,
         attack: .002,
@@ -906,6 +912,10 @@
         sustain: .62,
         release: .9
       });
+      if (!player) {
+        playPianoNote(note, duration, when);
+        return;
+      }
       activeAudioNodes.push(player);
       setTimeout(() => {
         activeAudioNodes = activeAudioNodes.filter(node => node !== player);
