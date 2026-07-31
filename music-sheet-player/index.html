@@ -94,6 +94,20 @@
       line-height: 1.45;
     }
 
+    .version {
+      display: inline-flex;
+      align-items: center;
+      margin-top: 10px;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--accent-2);
+      background: rgba(255, 250, 240, .72);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
     .transport {
       display: flex;
       gap: 8px;
@@ -513,6 +527,7 @@
           <div>
             <h1>ScoreLens Studio</h1>
             <p class="subtitle">Drop in a clean sheet image, tune the recognition, edit the notes, and audition the line with different instrument voices.</p>
+            <div class="version" title="App version">v2026.07.30-audio.2</div>
           </div>
         </div>
       </div>
@@ -639,7 +654,7 @@
       </aside>
     </section>
 
-    <p class="footer">Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
+    <p class="footer">ScoreLens Studio v2026.07.30-audio.2. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
   </main>
 
   <script>
