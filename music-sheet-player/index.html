@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ScoreLens Studio</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+  <script src="https://unpkg.com/soundfont-player@0.12.0/dist/soundfont-player.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     :root {
@@ -527,7 +528,7 @@
           <div>
             <h1>ScoreLens Studio</h1>
             <p class="subtitle">Drop in a clean sheet image, tune the recognition, edit the notes, and audition the line with different instrument voices.</p>
-            <div class="version" title="App version">v2026.07.30-piano.1</div>
+            <div class="version" title="App version">v2026.07.30-soundfont.1</div>
           </div>
         </div>
       </div>
@@ -654,7 +655,7 @@
       </aside>
     </section>
 
-    <p class="footer">ScoreLens Studio v2026.07.30-piano.1. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
+    <p class="footer">ScoreLens Studio v2026.07.30-soundfont.1. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
   </main>
 
   <script>
@@ -695,6 +696,10 @@
     let audioCtx = null;
     let playbackTimers = [];
     let activeAudioNodes = [];
+    let soundFontPiano = null;
+    let soundFontPianoPromise = null;
+    let soundFontPianoNotesKey = '';
+    let soundFontAvailable = true;
     let playbackStartedAt = 0;
     let playbackDuration = 0;
     let cursorIndex = -1;
@@ -739,6 +744,32 @@
       if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContextCtor();
       if (audioCtx.state === 'suspended') await audioCtx.resume();
       return audioCtx;
+    }
+
+    async function getSoundFontPiano(notes = []) {
+      if (!soundFontAvailable || !window.Soundfont) return null;
+      const normalizedNotes = [...new Set(notes.map(note => String(note).trim()).filter(noteToMidi).sort())];
+      const notesKey = normalizedNotes.join(',');
+      if (soundFontPiano && soundFontPianoNotesKey === notesKey) return soundFontPiano;
+      if (!soundFontPianoPromise) {
+        soundFontPianoPromise = Soundfont.instrument(audioCtx, 'acoustic_grand_piano', {
+          soundfont: 'MusyngKite',
+          format: 'mp3',
+          gain: 2.2,
+          notes: normalizedNotes.length ? normalizedNotes : undefined
+        }).then(player => {
+          soundFontPiano = player;
+          soundFontPianoNotesKey = notesKey;
+          soundFontPianoPromise = null;
+          return player;
+        }).catch(error => {
+          soundFontPianoPromise = null;
+          soundFontAvailable = false;
+          console.warn('SoundFont piano failed to load; falling back to local synthesis.', error);
+          return null;
+        });
+      }
+      return soundFontPianoPromise;
     }
 
     function clearPlaybackTimers() {
@@ -860,10 +891,31 @@
       }, Math.max(80, (end - audioCtx.currentTime + .1) * 1000));
     }
 
+    function playSoundFontPianoNote(note, duration, when) {
+      if (!soundFontPiano) {
+        playPianoNote(note, duration, when);
+        return;
+      }
+      const start = Math.max(audioCtx.currentTime + .02, when);
+      const length = Math.max(.12, durationToSeconds(duration) * .96);
+      const player = soundFontPiano.play(note, start, {
+        duration: length,
+        gain: .78,
+        attack: .002,
+        decay: .18,
+        sustain: .62,
+        release: .9
+      });
+      activeAudioNodes.push(player);
+      setTimeout(() => {
+        activeAudioNodes = activeAudioNodes.filter(node => node !== player);
+      }, Math.max(120, (start + length + 1 - audioCtx.currentTime) * 1000));
+    }
+
     function playBrowserNote(note, duration, when) {
       const voice = els.instrument.value;
       if (voice === 'piano') {
-        playPianoNote(note, duration, when);
+        playSoundFontPianoNote(note, duration, when);
         return;
       }
       const now = audioCtx.currentTime;
@@ -1162,9 +1214,11 @@
 
       for (const system of targetSystems) {
         const staffLines = system.lines;
-        const top = Math.max(0, Math.round(staffLines[0] - medianDiff(staffLines) * 3.2));
-        const bottom = Math.min(h - 1, Math.round(staffLines[4] + medianDiff(staffLines) * 2.4));
         const spacing = medianDiff(staffLines);
+        const top = Math.max(0, Math.round(staffLines[0] - spacing * 1.05));
+        const bottom = Math.min(h - 1, Math.round(staffLines[4] + spacing * 2.35));
+        const scanStartX = Math.max(0, Math.round(system.xStart + spacing * 5.5));
+        const scanEndX = Math.min(w - 1, Math.round(system.xEnd - spacing * 1.5));
         const blobs = [];
         const visited = new Uint8Array(w * h);
 
@@ -1176,7 +1230,7 @@
         }
 
         for (let y = top; y <= bottom; y++) {
-          for (let x = 0; x < w; x++) {
+          for (let x = scanStartX; x <= scanEndX; x++) {
             const idx = y * w + x;
             if (visited[idx] || !isInk(x, y)) continue;
             const q = [[x, y]];
@@ -1190,7 +1244,7 @@
               for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
                 const nx = cx + dx, ny = cy + dy;
                 const nidx = ny * w + nx;
-                if (nx < 0 || ny < top || nx >= w || ny > bottom || visited[nidx]) continue;
+                if (nx < scanStartX || ny < top || nx > scanEndX || ny > bottom || visited[nidx]) continue;
                 if (isInk(nx, ny)) {
                   visited[nidx] = 1;
                   q.push([nx, ny]);
@@ -1202,8 +1256,8 @@
             const area = bw * bh;
             const density = count / area;
             const noteSize = spacing * .52;
-            const afterClefZone = minX > Math.max(80, w * .12);
-            if (bw >= noteSize && bw <= spacing * 3.2 && bh >= noteSize && bh <= spacing * 3.4 && density > .2 && afterClefZone) {
+            const belowChordSymbolZone = (minY + maxY) / 2 > staffLines[0] - spacing * 1.2;
+            if (bw >= noteSize && bw <= spacing * 3.2 && bh >= noteSize && bh <= spacing * 3.4 && density > .2 && belowChordSymbolZone) {
               blobs.push({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, w: bw, h: bh, count, systemIndex: system.index, staffLines });
             }
           }
@@ -1420,6 +1474,10 @@
       }
       try {
         await getAudioContext();
+        if (els.instrument.value === 'piano' && soundFontAvailable) {
+          setStatus('Loading acoustic grand piano samples...');
+          await getSoundFontPiano(detected.notes.map(n => n.note));
+        }
       } catch (error) {
         setStatus('This browser cannot play Web Audio.');
         return;
