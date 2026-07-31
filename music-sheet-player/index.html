@@ -527,7 +527,7 @@
           <div>
             <h1>ScoreLens Studio</h1>
             <p class="subtitle">Drop in a clean sheet image, tune the recognition, edit the notes, and audition the line with different instrument voices.</p>
-            <div class="version" title="App version">v2026.07.30-audio.2</div>
+            <div class="version" title="App version">v2026.07.30-omr.1</div>
           </div>
         </div>
       </div>
@@ -654,7 +654,7 @@
       </aside>
     </section>
 
-    <p class="footer">ScoreLens Studio v2026.07.30-audio.2. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
+    <p class="footer">ScoreLens Studio v2026.07.30-omr.1. Recognition is local in your browser and tuned for scanned/photographed single-line scores. Complex polyphony, handwritten notation, percussion staves, and dense orchestral pages still need a dedicated OMR engine for production accuracy.</p>
   </main>
 
   <script>
@@ -832,6 +832,11 @@
       return diffs[Math.floor(diffs.length / 2)] || 12;
     }
 
+    function grayAt(data, width, x, y) {
+      const i = (y * width + x) * 4;
+      return data[i] * .299 + data[i + 1] * .587 + data[i + 2] * .114;
+    }
+
     function drawDemo(targetCtx = demoCtx, scale = 1) {
       const w = targetCtx.canvas.width;
       const h = targetCtx.canvas.height;
@@ -914,25 +919,79 @@
         }
       }
 
-      const rowCutoff = els.canvas.width * .18;
-      const rawLines = [];
-      for (let y = 0; y < rowInk.length; y++) {
-        if (rowInk[y] > rowCutoff) rawLines.push(y);
+      const staffSystems = findStaffSystems(img, threshold);
+      const staffLines = staffSystems.flatMap(system => system.lines);
+      const notes = detectNotes(img, staffSystems, threshold);
+      detected = { staffLines, staffSystems, notes };
+      if (els.quantize.checked) {
+        detected.notes.sort((a, b) => (a.systemIndex - b.systemIndex) || (a.x - b.x));
       }
-
-      const groups = groupRuns(rawLines, 3);
-      const staffLines = groups
-        .map(run => Math.round((run[0] + run[run.length - 1]) / 2))
-        .filter((line, idx, arr) => idx === 0 || line - arr[idx - 1] > 5)
-        .slice(0, 5);
-
-      const notes = detectNotes(img, staffLines, threshold);
-      detected = { staffLines, notes };
-      if (els.quantize.checked) detected.notes.sort((a, b) => a.x - b.x);
       syncNotesToText();
       renderNoteList();
       redrawOverlay();
-      setStatus(`Detected ${detected.notes.length} notes and ${staffLines.length} staff lines.`);
+      setStatus(`Detected ${detected.notes.length} notes across ${staffSystems.length} staff groups.`);
+    }
+
+    function findStaffSystems(img, threshold) {
+      const w = img.width;
+      const h = img.height;
+      const data = img.data;
+      const rawLines = [];
+      const startX = Math.floor(w * .06);
+      const endX = Math.floor(w * .94);
+      const scanW = endX - startX;
+
+      for (let y = 0; y < h; y++) {
+        let ink = 0;
+        let run = 0;
+        let longestRun = 0;
+        for (let x = startX; x < endX; x++) {
+          if (grayAt(data, w, x, y) < threshold) {
+            ink++;
+            run++;
+            longestRun = Math.max(longestRun, run);
+          } else {
+            run = 0;
+          }
+        }
+        if (longestRun > scanW * .24 && ink > scanW * .15) rawLines.push(y);
+      }
+
+      const centers = groupRuns(rawLines, 2)
+        .map(run => Math.round((run[0] + run[run.length - 1]) / 2))
+        .filter((line, idx, arr) => idx === 0 || line - arr[idx - 1] > 4);
+      const systems = [];
+
+      for (let i = 0; i <= centers.length - 5; i++) {
+        const lines = centers.slice(i, i + 5);
+        const diffs = lines.slice(1).map((line, idx) => line - lines[idx]);
+        const avg = diffs.reduce((sum, gap) => sum + gap, 0) / diffs.length;
+        const spread = Math.max(...diffs) - Math.min(...diffs);
+        const looksLikeStaff = avg >= 5 && avg <= 38 && spread <= Math.max(8, avg * .75) && lines[4] - lines[0] <= avg * 5.2;
+        const awayFromFrame = lines[0] > h * .04 && lines[4] < h * .94;
+        const separated = !systems.length || lines[0] - systems[systems.length - 1].lines[4] > avg * 2.2;
+        if (looksLikeStaff && awayFromFrame && separated) {
+          systems.push({ index: systems.length, lines });
+          i += 4;
+        }
+      }
+
+      if (systems.length) return systems;
+
+      const rowCutoff = w * .18;
+      const fallbackLines = [];
+      for (let y = 0; y < h; y++) {
+        let ink = 0;
+        for (let x = 0; x < w; x++) {
+          if (grayAt(data, w, x, y) < threshold) ink++;
+        }
+        if (ink > rowCutoff) fallbackLines.push(y);
+      }
+      const lines = groupRuns(fallbackLines, 3)
+        .map(run => Math.round((run[0] + run[run.length - 1]) / 2))
+        .filter((line, idx, arr) => idx === 0 || line - arr[idx - 1] > 5)
+        .slice(0, 5);
+      return lines.length === 5 ? [{ index: 0, lines }] : [];
     }
 
     function groupRuns(values, maxGap) {
@@ -950,83 +1009,144 @@
       return groups;
     }
 
-    function detectNotes(img, staffLines, threshold) {
-      if (staffLines.length < 5) return [];
+    function detectNotes(img, staffSystems, threshold) {
+      if (!staffSystems.length) return [];
       const w = img.width;
       const h = img.height;
       const data = img.data;
-      const top = Math.max(0, staffLines[0] - 55);
-      const bottom = Math.min(h - 1, staffLines[4] + 55);
-      const spacing = medianDiff(staffLines);
-      const blobs = [];
-      const visited = new Uint8Array(w * h);
+      const targetSystems = els.clef.value === 'treble' && staffSystems.length > 1
+        ? staffSystems.filter((_, idx) => idx % 2 === 0)
+        : staffSystems;
+      const allNotes = [];
 
-      function isInk(x, y) {
-        const i = (y * w + x) * 4;
-        const gray = data[i] * .299 + data[i + 1] * .587 + data[i + 2] * .114;
-        if (gray >= threshold) return false;
-        const nearStaff = staffLines.some(line => Math.abs(y - line) <= 2);
-        return !nearStaff;
-      }
+      for (const system of targetSystems) {
+        const staffLines = system.lines;
+        const top = Math.max(0, Math.round(staffLines[0] - medianDiff(staffLines) * 3.2));
+        const bottom = Math.min(h - 1, Math.round(staffLines[4] + medianDiff(staffLines) * 2.4));
+        const spacing = medianDiff(staffLines);
+        const blobs = [];
+        const visited = new Uint8Array(w * h);
 
-      for (let y = top; y <= bottom; y++) {
-        for (let x = 0; x < w; x++) {
-          const idx = y * w + x;
-          if (visited[idx] || !isInk(x, y)) continue;
-          const q = [[x, y]];
-          visited[idx] = 1;
-          let minX = x, maxX = x, minY = y, maxY = y, count = 0;
-          while (q.length) {
-            const [cx, cy] = q.pop();
-            count++;
-            minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);
-            minY = Math.min(minY, cy); maxY = Math.max(maxY, cy);
-            for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-              const nx = cx + dx, ny = cy + dy;
-              const nidx = ny * w + nx;
-              if (nx < 0 || ny < top || nx >= w || ny > bottom || visited[nidx]) continue;
-              if (isInk(nx, ny)) {
-                visited[nidx] = 1;
-                q.push([nx, ny]);
+        function isInk(x, y) {
+          const gray = grayAt(data, w, x, y);
+          if (gray >= threshold) return false;
+          const nearStaff = staffLines.some(line => Math.abs(y - line) <= Math.max(1, spacing * .18));
+          return !nearStaff;
+        }
+
+        for (let y = top; y <= bottom; y++) {
+          for (let x = 0; x < w; x++) {
+            const idx = y * w + x;
+            if (visited[idx] || !isInk(x, y)) continue;
+            const q = [[x, y]];
+            visited[idx] = 1;
+            let minX = x, maxX = x, minY = y, maxY = y, count = 0;
+            while (q.length) {
+              const [cx, cy] = q.pop();
+              count++;
+              minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);
+              minY = Math.min(minY, cy); maxY = Math.max(maxY, cy);
+              for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                const nx = cx + dx, ny = cy + dy;
+                const nidx = ny * w + nx;
+                if (nx < 0 || ny < top || nx >= w || ny > bottom || visited[nidx]) continue;
+                if (isInk(nx, ny)) {
+                  visited[nidx] = 1;
+                  q.push([nx, ny]);
+                }
               }
             }
+            const bw = maxX - minX + 1;
+            const bh = maxY - minY + 1;
+            const area = bw * bh;
+            const density = count / area;
+            const noteSize = spacing * .52;
+            const afterClefZone = minX > Math.max(80, w * .12);
+            if (bw >= noteSize && bw <= spacing * 3.2 && bh >= noteSize && bh <= spacing * 3.4 && density > .2 && afterClefZone) {
+              blobs.push({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, w: bw, h: bh, count, systemIndex: system.index, staffLines });
+            }
           }
-          const bw = maxX - minX + 1;
-          const bh = maxY - minY + 1;
-          const area = bw * bh;
-          const density = count / area;
-          const noteSize = spacing * .65;
-          const afterClefZone = minX > Math.max(80, w * .12);
-          if (bw >= noteSize && bw <= spacing * 2.7 && bh >= noteSize && bh <= spacing * 2.7 && density > .22 && afterClefZone) {
-            blobs.push({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, w: bw, h: bh, count });
+        }
+
+        for (const scanNote of scanNoteHeads(data, w, h, staffLines, system.index, threshold)) {
+          blobs.push(scanNote);
+        }
+
+        const merged = [];
+        for (const blob of blobs.sort((a, b) => a.x - b.x)) {
+          const prior = merged.find(n => Math.abs(n.x - blob.x) < spacing * 1.45 && Math.abs(n.y - blob.y) < spacing * 1.45);
+          if (prior) {
+            const total = prior.count + blob.count;
+            prior.x = (prior.x * prior.count + blob.x * blob.count) / total;
+            prior.y = (prior.y * prior.count + blob.y * blob.count) / total;
+            prior.w = Math.max(prior.w, blob.w);
+            prior.h = Math.max(prior.h, blob.h);
+            prior.count = total;
+          } else {
+            merged.push(blob);
+          }
+        }
+
+        const shift = Number(els.keyShift.value || 0);
+        allNotes.push(...merged.slice(0, 48).map((blob, idx) => ({
+          id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + system.index * 100 + idx),
+          x: blob.x,
+          y: blob.y,
+          systemIndex: blob.systemIndex,
+          note: midiToNote(pitchFromY(blob.y, blob.staffLines || staffLines, els.clef.value) + shift),
+          duration: els.duration.value,
+          confidence: Math.min(99, Math.round(blob.count / (spacing * spacing) * 70))
+        })));
+      }
+
+      return allNotes.slice(0, 96);
+    }
+
+    function scanNoteHeads(data, w, h, staffLines, systemIndex, threshold) {
+      const spacing = medianDiff(staffLines);
+      const rx = Math.max(5, spacing * .82);
+      const ry = Math.max(4, spacing * .58);
+      const stepX = Math.max(2, Math.round(spacing * .34));
+      const startX = Math.max(90, Math.round(w * .13));
+      const endX = Math.round(w * .93);
+      const ySlots = [];
+      for (let step = -5; step <= 16; step++) {
+        const y = staffLines[4] - step * spacing / 2;
+        if (y >= staffLines[0] - spacing * 3 && y <= staffLines[4] + spacing * 2.2) ySlots.push(y);
+      }
+      const candidates = [];
+
+      for (const y of ySlots) {
+        for (let x = startX; x < endX; x += stepX) {
+          let ink = 0;
+          let total = 0;
+          const minX = Math.max(0, Math.round(x - rx));
+          const maxX = Math.min(w - 1, Math.round(x + rx));
+          const minY = Math.max(0, Math.round(y - ry));
+          const maxY = Math.min(h - 1, Math.round(y + ry));
+          for (let yy = minY; yy <= maxY; yy++) {
+            const nearStaff = staffLines.some(line => Math.abs(yy - line) <= Math.max(1, spacing * .16));
+            for (let xx = minX; xx <= maxX; xx++) {
+              const dx = (xx - x) / rx;
+              const dy = (yy - y) / ry;
+              if (dx * dx + dy * dy > 1) continue;
+              total++;
+              if (!nearStaff && grayAt(data, w, xx, yy) < threshold) ink++;
+            }
+          }
+          if (ink >= Math.max(8, total * .18)) {
+            candidates.push({ x, y, w: rx * 2, h: ry * 2, count: ink, systemIndex, staffLines });
           }
         }
       }
 
-      const merged = [];
-      for (const blob of blobs.sort((a, b) => a.x - b.x)) {
-        const prior = merged.find(n => Math.abs(n.x - blob.x) < spacing * 1.25 && Math.abs(n.y - blob.y) < spacing * 2.25);
-        if (prior) {
-          const total = prior.count + blob.count;
-          prior.x = (prior.x * prior.count + blob.x * blob.count) / total;
-          prior.y = (prior.y * prior.count + blob.y * blob.count) / total;
-          prior.w = Math.max(prior.w, blob.w);
-          prior.h = Math.max(prior.h, blob.h);
-          prior.count = total;
-        } else {
-          merged.push(blob);
-        }
+      const kept = [];
+      for (const candidate of candidates.sort((a, b) => b.count - a.count)) {
+        const duplicate = kept.some(note => Math.abs(note.x - candidate.x) < spacing * 1.6 && Math.abs(note.y - candidate.y) < spacing * 1.25);
+        if (!duplicate) kept.push(candidate);
+        if (kept.length >= 36) break;
       }
-
-      const shift = Number(els.keyShift.value || 0);
-      return merged.slice(0, 64).map((blob, idx) => ({
-        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + idx),
-        x: blob.x,
-        y: blob.y,
-        note: midiToNote(pitchFromY(blob.y, staffLines, els.clef.value) + shift),
-        duration: els.duration.value,
-        confidence: Math.min(99, Math.round(blob.count / (spacing * spacing) * 80))
-      }));
+      return kept;
     }
 
     function redrawOverlay() {
