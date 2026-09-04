@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#09090c">
+  <meta name="description" content="精确、轻量的浏览器逐帧视频查看器。">
+  <title>Frame Studio · 逐帧视频查看器</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Frame Studio 首页">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>Frame Studio</span>
+      </a>
+      <div class="safe-use"><span aria-hidden="true">●</span> 仅限停车或乘客使用</div>
+    </header>
+
+    <section class="source-card" aria-labelledby="source-title">
+      <div class="source-heading">
+        <div>
+          <p class="eyebrow">VIDEO SOURCE</p>
+          <h1 id="source-title">粘贴视频直链，逐帧查看</h1>
+        </div>
+        <label class="file-button" for="fileInput">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5"/></svg>
+          本地视频
+        </label>
+        <input id="fileInput" type="file" accept="video/*">
+      </div>
+
+      <form class="url-form" id="urlForm">
+        <label class="sr-only" for="videoUrl">视频 HTTPS 直链</label>
+        <div class="url-field">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></svg>
+          <input id="videoUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com/video.mp4" required>
+          <button class="clear-button" id="clearUrl" type="button" aria-label="清空地址" hidden>×</button>
+        </div>
+        <button class="load-button" type="submit">加载视频 <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="source-note">支持浏览器可直接访问的 MP4、WebM 等媒体地址。视频网站的页面链接通常需要服务端解析，无法在纯静态页面中直接加载。</p>
+    </section>
+
+    <section class="player-card" id="playerCard" aria-label="逐帧视频播放器">
+      <div class="stage" id="stage">
+        <canvas id="frameCanvas" aria-label="当前视频画面"></canvas>
+        <video id="sourceVideo" playsinline preload="metadata"></video>
+        <div class="empty-state" id="emptyState">
+          <div class="frame-icon" aria-hidden="true"><span></span></div>
+          <strong>等待视频</strong>
+          <p>输入视频直链，或选择设备上的视频文件。</p>
+        </div>
+        <div class="stage-status" id="stageStatus" aria-live="polite">READY</div>
+        <div class="frame-readout" id="frameReadout" hidden>
+          <span>FRAME</span>
+          <strong id="currentFrame">000000</strong>
+        </div>
+        <div class="loading" id="loading" hidden><span></span><span></span><span></span></div>
+      </div>
+
+      <div class="timeline-wrap">
+        <input id="timeline" class="timeline" type="range" min="0" max="1000" value="0" aria-label="视频进度">
+        <div class="time-row">
+          <span id="currentTime">00:00.000</span>
+          <span id="sourceName">NO SOURCE</span>
+          <span id="duration">00:00.000</span>
+        </div>
+      </div>
+
+      <div class="transport">
+        <div class="primary-controls">
+          <button class="control-button frame-step" id="prevFrame" type="button" disabled aria-label="上一帧" title="上一帧（←）">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M18 6l-8 6 8 6z"/></svg>
+          </button>
+          <button class="control-button play-button" id="playPause" type="button" disabled aria-label="播放" title="播放或暂停（空格）">
+            <svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z"/></svg>
+          </button>
+          <button class="control-button frame-step" id="nextFrame" type="button" disabled aria-label="下一帧" title="下一帧（→）">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M6 6l8 6-8 6z"/></svg>
+          </button>
+        </div>
+
+        <div class="setting-controls">
+          <label class="select-control">速度
+            <select id="playbackRate" disabled>
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+            </select>
+          </label>
+          <label class="select-control">FPS
+            <select id="fps">
+              <option value="24">24</option>
+              <option value="25">25</option>
+              <option value="30" selected>30</option>
+              <option value="50">50</option>
+              <option value="60">60</option>
+            </select>
+          </label>
+          <button class="utility-button" id="mute" type="button" disabled aria-label="静音" title="静音（M）">
+            <svg class="volume-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4zm12 1a3 3 0 0 1 0 4m2-7a7 7 0 0 1 0 10"/></svg>
+            <svg class="muted-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4zm12 1 5 5m0-5-5 5"/></svg>
+          </button>
+          <button class="utility-button" id="fullscreen" type="button" disabled aria-label="全屏" title="全屏（F）">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M8 21H3v-5m13 5h5v-5"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="shortcut-row" aria-label="键盘快捷键">
+        <span><kbd>←</kbd><kbd>→</kbd> 前后逐帧</span>
+        <span><kbd>Space</kbd> 播放 / 暂停</span>
+        <span><kbd>J</kbd><kbd>L</kbd> 前后 5 秒</span>
+      </div>
+    </section>
+
+    <div class="message" id="message" role="status" aria-live="polite" hidden></div>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
