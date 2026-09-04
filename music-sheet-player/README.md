@@ -16,6 +16,8 @@ Then open:
 http://127.0.0.1:8787/
 ```
 
+The default page adapts to phone, tablet, and desktop screens. Existing `mobile.html` links redirect to this same page.
+
 ## What Works Now
 
 - Upload PNG/JPG sheet images.
@@ -25,6 +27,14 @@ http://127.0.0.1:8787/
 - Edit recognized notes in a list or text box.
 - Play back using piano, violin, flute, guitar, marimba, or pure tone voices.
 - Tune threshold, tempo, clef, transpose, and overlay display.
+
+## Tests
+
+Run the playback cancellation regression tests with Node.js 18 or later:
+
+```sh
+node --test tests/playback.test.cjs
+```
 
 ## Limits
 
