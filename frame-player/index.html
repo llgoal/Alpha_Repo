@@ -22,7 +22,7 @@
       <div class="source-heading">
         <div>
           <p class="eyebrow">VIDEO SOURCE</p>
-          <h1 id="source-title">粘贴视频直链，逐帧查看</h1>
+          <h1 id="source-title">粘贴 YouTube 链接，逐帧查看</h1>
         </div>
         <label class="file-button" for="fileInput">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5"/></svg>
@@ -32,25 +32,26 @@
       </div>
 
       <form class="url-form" id="urlForm">
-        <label class="sr-only" for="videoUrl">视频 HTTPS 直链</label>
+        <label class="sr-only" for="videoUrl">YouTube 链接或视频 HTTPS 直链</label>
         <div class="url-field">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></svg>
-          <input id="videoUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com/video.mp4" required>
+          <input id="videoUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://www.youtube.com/watch?v=..." required>
           <button class="clear-button" id="clearUrl" type="button" aria-label="清空地址" hidden>×</button>
         </div>
         <button class="load-button" type="submit">加载视频 <span aria-hidden="true">→</span></button>
       </form>
-      <p class="source-note">支持浏览器可直接访问的 MP4、WebM 等媒体地址。视频网站的页面链接通常需要服务端解析，无法在纯静态页面中直接加载。</p>
+      <p class="source-note">支持 YouTube 分享链接，以及浏览器可直接访问的 MP4、WebM 等媒体地址。YouTube 逐帧按所选 FPS 做时间步进。</p>
     </section>
 
     <section class="player-card" id="playerCard" aria-label="逐帧视频播放器">
       <div class="stage" id="stage">
         <canvas id="frameCanvas" aria-label="当前视频画面"></canvas>
         <video id="sourceVideo" playsinline preload="metadata"></video>
+        <div class="youtube-layer" id="youtubeLayer" hidden><div id="youtubePlayer"></div></div>
         <div class="empty-state" id="emptyState">
           <div class="frame-icon" aria-hidden="true"><span></span></div>
           <strong>等待视频</strong>
-          <p>输入视频直链，或选择设备上的视频文件。</p>
+          <p>输入 YouTube 链接、视频直链，或选择设备上的视频文件。</p>
         </div>
         <div class="stage-status" id="stageStatus" aria-live="polite">READY</div>
         <div class="frame-readout" id="frameReadout" hidden>
