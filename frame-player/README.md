@@ -1,17 +1,19 @@
 # Frame Studio
 
-A static, responsive frame-by-frame video viewer.
+A static, responsive frame-by-frame MP4 viewer powered by WebCodecs.
 
 ## Features
 
-- Load a YouTube URL, browser-accessible HTTPS video URL, or local video file.
-- Step backward or forward using the selected FPS estimate.
-- Control YouTube through its official IFrame Player API; direct and local files use the browser media pipeline and canvas.
+- Load a YouTube URL, browser-accessible HTTPS MP4 URL, or local MP4 file.
+- Demux MP4 files with MP4Box.js and decode compressed samples with `VideoDecoder`.
+- Draw decoded `VideoFrame` objects directly to canvas without an HTML `<video>` element.
+- Step through actual MP4 video samples; remote MP4 files are requested in HTTP Range chunks.
+- Control YouTube through its official IFrame Player API.
 - Scrub, change playback speed, mute, and enter fullscreen.
 - Keyboard shortcuts for frame stepping and five-second skips.
 
 ## Limitations
 
-YouTube frame stepping uses time-based seeking and the selected FPS, so it is an estimate rather than codec-level frame accuracy. Some YouTube videos disable embedding or have privacy, age, region, or account restrictions. Other remote sources must be direct media URLs the browser can load; codec, CORS, authentication, range-request, and mixed-content restrictions still apply.
+Canvas/WebCodecs mode is silent and currently supports MP4 only. Codec support depends on the browser; H.264/AVC MP4 is the safest choice. Remote sources must permit CORS and Range reads. YouTube frame stepping remains time-based and estimated because YouTube is handled by its official player; some videos disable embedding or have privacy, age, region, or account restrictions.
 
 Use only while parked or by a passenger. This project does not override vehicle or browser playback safety controls.

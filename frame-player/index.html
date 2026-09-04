@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#09090c">
-  <meta name="description" content="精确、轻量的浏览器逐帧视频查看器。">
+  <meta name="description" content="使用 WebCodecs 解码到 Canvas 的逐帧 MP4 查看器。">
   <title>Frame Studio · 逐帧视频查看器</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -22,13 +22,13 @@
       <div class="source-heading">
         <div>
           <p class="eyebrow">VIDEO SOURCE</p>
-          <h1 id="source-title">粘贴 YouTube 链接，逐帧查看</h1>
+          <h1 id="source-title">Canvas 逐帧查看 MP4</h1>
         </div>
         <label class="file-button" for="fileInput">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5"/></svg>
           本地视频
         </label>
-        <input id="fileInput" type="file" accept="video/*">
+        <input id="fileInput" type="file" accept="video/mp4,.mp4">
       </div>
 
       <form class="url-form" id="urlForm">
@@ -40,18 +40,17 @@
         </div>
         <button class="load-button" type="submit">加载视频 <span aria-hidden="true">→</span></button>
       </form>
-      <p class="source-note">支持 YouTube 分享链接，以及浏览器可直接访问的 MP4、WebM 等媒体地址。YouTube 逐帧按所选 FPS 做时间步进。</p>
+      <p class="source-note">本地或直链 MP4 使用 MP4Box.js + WebCodecs 解码并绘制到 Canvas，不使用 HTML 视频元素，默认静音。YouTube 仍使用官方播放器。</p>
     </section>
 
     <section class="player-card" id="playerCard" aria-label="逐帧视频播放器">
       <div class="stage" id="stage">
         <canvas id="frameCanvas" aria-label="当前视频画面"></canvas>
-        <video id="sourceVideo" playsinline preload="metadata"></video>
         <div class="youtube-layer" id="youtubeLayer" hidden><div id="youtubePlayer"></div></div>
         <div class="empty-state" id="emptyState">
           <div class="frame-icon" aria-hidden="true"><span></span></div>
           <strong>等待视频</strong>
-          <p>输入 YouTube 链接、视频直链，或选择设备上的视频文件。</p>
+          <p>输入 YouTube 链接、MP4 直链，或选择本地 MP4。</p>
         </div>
         <div class="stage-status" id="stageStatus" aria-live="polite">READY</div>
         <div class="frame-readout" id="frameReadout" hidden>
