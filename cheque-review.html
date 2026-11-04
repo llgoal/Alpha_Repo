@@ -282,7 +282,16 @@
       border: 1px solid rgba(189, 202, 228, 0.6);
     }
 
+    .rotated-stage {
+      width: calc(var(--canvas-height) + var(--ruler-size));
+      height: calc(var(--canvas-width) + var(--ruler-size));
+      margin: 0 auto;
+    }
+
     .layout-stage {
+      /* Rotate the complete layout, preserving every block's local coordinates. */
+      transform-origin: top left;
+      transform: translateX(calc(var(--canvas-height) + var(--ruler-size))) rotate(90deg);
       width: max-content;
       margin: 0 auto;
       display: grid;
@@ -428,7 +437,13 @@
       .app { display: block; padding: 0; max-width: none; }
       .controls, .canvas-header, .statusbar, .ruler, .ruler-corner { display: none !important; }
       .panel, .canvas-panel, .page-wrap { background: transparent; border: 0; box-shadow: none; padding: 0; }
-      .layout-stage { display: block; width: auto; }
+      .rotated-stage { width: var(--canvas-height); height: var(--canvas-width); margin: 0; }
+      .layout-stage {
+        display: block;
+        width: var(--canvas-width);
+        margin: 0;
+        transform: translateX(var(--canvas-height)) rotate(90deg);
+      }
       .page { box-shadow: none; margin: 0; border: 0; }
       .page::before { content: none; }
       .item { border-color: transparent !important; box-shadow: none !important; background: transparent; }
@@ -589,6 +604,7 @@
       </div>
 
       <div class="page-wrap">
+        <div class="rotated-stage">
         <div class="layout-stage">
           <div class="ruler ruler-y" id="rulerY"></div>
           <div class="page" id="page">
@@ -600,6 +616,7 @@
           </div>
           <div class="ruler-corner"></div>
           <div class="ruler ruler-x" id="rulerX"></div>
+        </div>
         </div>
       </div>
 
@@ -898,3 +915,4 @@
   </script>
 </body>
 </html>
+
