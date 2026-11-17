@@ -27,6 +27,8 @@ The default page adapts to phone, tablet, and desktop screens. Existing `mobile.
 - Edit recognized notes in a list or text box.
 - Play back using piano, violin, flute, guitar, marimba, or pure tone voices.
 - Tune threshold, tempo, clef, transpose, and overlay display.
+- Piano samples load from a CDN; if they take more than 6 seconds, playback starts with the built-in piano synth instead of staying silent.
+- On iPhone/iPad, playback unlocks audio during the Play tap so the ring/silent switch does not mute it.
 
 ## Tests
 

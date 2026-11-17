@@ -50,7 +50,7 @@ function harness(audioReady = Promise.resolve()) {
     els,
     performance: { now: () => 0 },
     getAudioContext: () => audioReady,
-    getSoundFontPiano: () => { sampleRequests++; return samples.promise; },
+    loadPianoSamples: () => { sampleRequests++; return samples.promise; },
     redrawOverlay() {},
     durationToSeconds: () => 0.5,
     playBrowserNote: (...args) => played.push(args),

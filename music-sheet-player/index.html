@@ -1084,12 +1084,96 @@
       return quarter * beats;
     }
 
+    // A short silent WAV. Playing it from an <audio> element during the tap
+    // moves iOS into the "playback" audio session, so Web Audio is not muted
+    // by the ring/silent switch.
+    let unlockAudioEl = null;
+
+    function makeSilentWavUrl() {
+      // 0.25 s of 8 kHz, 8-bit mono silence (0x80 is the zero level).
+      const samples = 2000;
+      const bytes = new Uint8Array(44 + samples);
+      const view = new DataView(bytes.buffer);
+      const text = (offset, str) => [...str].forEach((c, i) => bytes[offset + i] = c.charCodeAt(0));
+      text(0, 'RIFF'); view.setUint32(4, 36 + samples, true); text(8, 'WAVE');
+      text(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+      view.setUint32(24, 8000, true); view.setUint32(28, 8000, true); view.setUint16(32, 1, true); view.setUint16(34, 8, true);
+      text(36, 'data'); view.setUint32(40, samples, true);
+      bytes.fill(128, 44);
+      return URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+    }
+
+    function unlockMediaSession() {
+      try {
+        if (navigator.audioSession) navigator.audioSession.type = 'playback';
+      } catch (error) {
+        // Older browsers do not expose the Audio Session API.
+      }
+      try {
+        if (!unlockAudioEl) {
+          unlockAudioEl = document.createElement('audio');
+          unlockAudioEl.src = makeSilentWavUrl();
+          unlockAudioEl.loop = true;
+          unlockAudioEl.preload = 'auto';
+          unlockAudioEl.setAttribute('playsinline', '');
+          unlockAudioEl.setAttribute('x-webkit-airplay', 'deny');
+        }
+        const attempt = unlockAudioEl.play();
+        if (attempt && attempt.catch) attempt.catch(() => {});
+      } catch (error) {
+        // Media element unlock is best effort only.
+      }
+    }
+
+    function primeAudioContext(context) {
+      // Starting a one-sample buffer inside the user gesture unlocks output
+      // on Safari, which otherwise keeps the context silent.
+      try {
+        const buffer = context.createBuffer(1, 1, context.sampleRate || 44100);
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.connect(context.destination);
+        source.start(0);
+      } catch (error) {
+        // Priming is best effort only.
+      }
+    }
+
+    // Must be called synchronously from a click/tap handler: every unlock step
+    // runs before the first await so the browser still sees the user gesture.
     async function getAudioContext() {
       const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextCtor) throw new Error('Web Audio is not supported in this browser.');
+      unlockMediaSession();
       if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContextCtor();
-      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      let resuming = null;
+      if (audioCtx.state !== 'running') resuming = audioCtx.resume();
+      primeAudioContext(audioCtx);
+      if (resuming) {
+        await Promise.race([resuming, new Promise(resolve => setTimeout(resolve, 1500))]);
+      }
+      if (audioCtx.state !== 'running') {
+        const error = new Error('Audio output is still locked by the browser.');
+        error.code = 'audio-locked';
+        throw error;
+      }
       return audioCtx;
+    }
+
+    // Resolves with the sampled piano, or null after a timeout so playback can
+    // start with the built-in synth instead of waiting on a slow CDN forever.
+    // Loading continues in the background and is used on the next Play.
+    function loadPianoSamples(notes, timeoutMs = 6000) {
+      const loading = getSoundFontPiano(notes);
+      if (!loading || !loading.then) return Promise.resolve(loading || null);
+      let timer = null;
+      const timeout = new Promise(resolve => {
+        timer = setTimeout(() => {
+          console.warn('Piano samples are taking too long; using the built-in piano voice for now.');
+          resolve(null);
+        }, timeoutMs);
+      });
+      return Promise.race([loading, timeout]).finally(() => clearTimeout(timer));
     }
 
     async function getSoundFontPiano(notes = []) {
@@ -1834,11 +1918,13 @@
         if (requestId !== playbackRequestId) return;
         if (els.instrument.value === 'piano' && soundFontAvailable) {
           setStatus('Loading acoustic grand piano samples...');
-          await getSoundFontPiano(detected.notes.map(n => n.note));
+          await loadPianoSamples(detected.notes.map(n => n.note));
         }
       } catch (error) {
         if (requestId === playbackRequestId) {
-          setStatus('This browser cannot play Web Audio.');
+          setStatus(error && error.code === 'audio-locked'
+            ? 'Audio is blocked by the browser. Tap Play again, and check the volume / silent switch.'
+            : 'This browser cannot play Web Audio.');
         }
         return;
       }
@@ -1864,6 +1950,7 @@
         els.playMeter.style.width = '100%';
         setStatus('Playback complete.');
         clearPlaybackTimers();
+        if (typeof unlockAudioEl !== 'undefined' && unlockAudioEl) unlockAudioEl.pause();
       }, (time + .08) * 1000);
       playbackTimers.push(completeTimer);
       playbackStartedAt = performance.now();
@@ -1879,6 +1966,7 @@
 
     function stopScore() {
       playbackRequestId++;
+      if (typeof unlockAudioEl !== 'undefined' && unlockAudioEl) unlockAudioEl.pause();
       clearPlaybackTimers();
       stopActiveAudioNodes();
       cursorIndex = -1;
