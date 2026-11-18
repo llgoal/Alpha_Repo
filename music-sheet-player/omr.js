@@ -391,6 +391,7 @@
         return true;
       });
       for (const note of heads) attachStem(ctx, staff, note, heads);
+      fixStackStems(ctx, heads);
       dropStemTipBlobs(ctx, heads);
       const header = readHeader(ctx, staff, heads.filter(n => n.valid), previousClef, options);
       previousClef = header.clef;
@@ -596,8 +597,8 @@
     // Strip anchors are sorted by x so a staff can bend gradually.
     anchors.sort((a, b) => (b.whole - a.whole) || a.x - b.x);
     const groups = [];
-    for (const an of anchors) {
-      let best = null, bestD = Infinity, shifted = false;
+    const match = an => {
+      let best = null, bestD = Infinity, shifted = false, far = false;
       for (const g of groups) {
         // Compare with the group's anchor nearest in x.
         let near = g.anchors[0];
@@ -619,10 +620,35 @@
           // matches the neighbour better when shifted: drop it.
           best = g; bestD = dy;
           shifted = Math.min(diff(-1), diff(1)) < 0.5 * dy;
+          far = Math.abs(near.x - an.x) > 1.5 * stripW;
         }
       }
-      if (best) { if (!shifted) best.anchors.push(an); }
-      else groups.push({ anchors: [an] });
+      return { best, shifted, far };
+    };
+    // Against a far neighbour (or only the whole-width fit) a tilted staff
+    // can drift by a full line and look shifted: decide those later, once
+    // closer strips have joined the group.
+    let pending = [];
+    for (const an of anchors) {
+      const m = match(an);
+      if (!m.best) groups.push({ anchors: [an] });
+      else if (!m.shifted) m.best.anchors.push(an);
+      else if (m.far) pending.push(an);
+    }
+    for (let changed = true; changed && pending.length;) {
+      changed = false;
+      const rest = [];
+      for (const an of pending) {
+        const m = match(an);
+        if (m.best && !m.shifted) { m.best.anchors.push(an); changed = true; }
+        else if (m.best && m.far) rest.push(an);
+      }
+      pending = rest;
+    }
+    // Still only far neighbours: accept when the shift is under one line.
+    for (const an of pending) {
+      const m = match(an);
+      if (m.best) m.best.anchors.push(an);
     }
     const staves = [];
     for (const g of groups) {
@@ -852,7 +878,7 @@
       }
     }
     // Hollow heads: an enclosed white hole sitting on a position.
-    heads.push(...findHollowHeads(ctx, staff, kMin, kMax));
+    heads.push(...resolveHollowStacks(ctx, staff, findHollowHeads(ctx, staff, kMin, kMax)));
     // Non-maximum suppression across neighbouring positions.
     heads.sort((a, b) => b.score - a.score);
     const kept = [];
@@ -880,6 +906,96 @@
       for (let kk = 10; kk <= hd.k; kk += 2) if (!ledgerAt(hd, kk)) return false;
       return true;
     });
+  }
+
+  // Half-note chords in thirds: the rings touch and holes are also found
+  // between the real heads. Measure the column's height: n heads stacked a
+  // space apart are n spaces tall, which fixes where each head sits.
+  function resolveHollowStacks(ctx, staff, cands) {
+    const { D } = ctx;
+    const sorted = cands.slice().sort((a, b) => a.x - b.x);
+    const clusters = [];
+    for (const c of sorted) {
+      const cl = clusters.find(g => Math.abs(g.x - c.x) < 0.5 * D);
+      if (cl) { cl.items.push(c); cl.x = cl.items.reduce((a, o) => a + o.x, 0) / cl.items.length; }
+      else clusters.push({ x: c.x, items: [c] });
+    }
+    const out = [];
+    for (const cl of clusters) {
+      const ks = cl.items.map(o => o.k);
+      const kLo = Math.min(...ks), kHi = Math.max(...ks);
+      if (kHi - kLo < 2) { out.push(...cl.items); continue; }
+      const ws = cl.items.map(o => o.R - o.L).sort((a, b) => a - b);
+      const W = ws[Math.floor(ws.length / 2)];
+      const cx = cl.x;
+      const y0 = posY(staff, cx, kLo) - 0.9 * D, y1 = posY(staff, cx, kHi) + 0.9 * D;
+      let yT = Infinity, yB = -Infinity;
+      for (let y = Math.round(y0); y <= y1; y++) {
+        // bin, not sym: ring edges on staff lines were erased with them
+        if (fillBin(ctx, cx - 0.3 * W, y, cx + 0.3 * W, y) >= 0.5) { yT = Math.min(yT, y); yB = Math.max(yB, y); }
+      }
+      const H = yB - yT + 1;
+      const n = Math.round(H / D);
+      let ok = isFinite(H) && n >= 2 && n <= 4 && Math.abs(H / n - D) < 0.3 * D;
+      const want = [];
+      if (ok) {
+        for (let i = 0; i < n; i++) want.push(nearestPos(staff, cx, yT + (i + 0.5) * H / n).k);
+        ok = want.every((k, i) => k === want[0] + 2 * i);
+        // Each head shows its ring's sides (a fifth leaves a white gap).
+        for (let i = 0; i < n && ok; i++) {
+          const hy = yT + (i + 0.5) * H / n;
+          // (staff lines removed here, so a line through a gap is no ring)
+          const l = fill(ctx, cx - 0.5 * W, hy - 0.15 * D, cx - 0.25 * W, hy + 0.15 * D);
+          const r = fill(ctx, cx + 0.25 * W, hy - 0.15 * D, cx + 0.5 * W, hy + 0.15 * D);
+          // and a white inside (a digit or a clef is ink there)
+          // (just above and below the centre: a ledger line may run through it)
+          const inner = Math.min(
+            fill(ctx, cx - 0.12 * W, hy - 0.1 * D, cx + 0.12 * W, hy + 0.1 * D),
+            Math.max(
+              fill(ctx, cx - 0.12 * W, hy - 0.3 * D, cx + 0.12 * W, hy - 0.14 * D),
+              fill(ctx, cx - 0.12 * W, hy + 0.14 * D, cx + 0.12 * W, hy + 0.3 * D)));
+          if (Math.min(l, r) < 0.15 || inner > 0.3) { ok = false; dbg("stack reject", Math.round(cx), i, l.toFixed(2), r.toFixed(2), inner.toFixed(2)); }
+        }
+      }
+      dbg('hollow stack', Math.round(cx), 'k', kLo, kHi, 'H', (H / D).toFixed(2), 'n', n, ok ? want.join(',') : 'no');
+      if (!ok) { out.push(...cl.items); continue; }
+      for (const k of want) {
+        const have = cl.items.filter(o => o.k === k).sort((a, b) => b.score - a.score)[0];
+        const y = posY(staff, cx, k);
+        const stack = cl;
+        out.push(have ? Object.assign(have, { score: 2, stack }) : { x: cx, y, k, L: cx - W / 2, R: cx + W / 2, filled: false, score: 2, stack });
+      }
+    }
+    return out;
+  }
+
+  // A stack of hollow heads shares one stem (half notes) or has none
+  // (whole notes); single-head stem tests stumble on the touching rings.
+  function fixStackStems(ctx, heads) {
+    const { D } = ctx;
+    const stacks = new Map();
+    for (const h of heads) if (h.stack) { if (!stacks.has(h.stack)) stacks.set(h.stack, []); stacks.get(h.stack).push(h); }
+    for (const members of stacks.values()) {
+      members.sort((a, b) => a.y - b.y);
+      const top = members[0], bot = members[members.length - 1];
+      const L = Math.min(...members.map(m => m.L)), R = Math.max(...members.map(m => m.R));
+      const up = verticalReach(ctx, R - 0.4 * D, R + 0.15 * D, top.y, -1, 9 * D);
+      const down = verticalReach(ctx, L - 0.15 * D, L + 0.4 * D, bot.y, 1, 9 * D);
+      let stem = null;
+      if (up.length >= 2.0 * D && up.length >= down.length) stem = { dir: -1, x: up.x, tip: top.y - up.length, length: up.length + (bot.y - top.y) };
+      else if (down.length >= 2.0 * D) stem = { dir: 1, x: down.x, tip: bot.y + down.length, length: down.length + (bot.y - top.y) };
+      else if (Math.max(up.length, down.length) > 1.2 * D) continue;
+      dbg('stack stem', Math.round(top.x), members.map(m => m.k).join(','), stem ? stem.dir : 'whole');
+      for (const m of members) { m.stem = stem ? Object.assign({}, stem) : null; m.valid = true; }
+    }
+  }
+
+  function fillBin(ctx, x0, y0, x1, y1) {
+    let n = 0, t = 0;
+    for (let y = Math.round(y0); y <= Math.round(y1); y++) for (let x = Math.round(x0); x <= Math.round(x1); x++) {
+      t++; if (pxBin(ctx, x, y)) n++;
+    }
+    return t ? n / t : 0;
   }
 
   function measureFilledHead(ctx, staff, cx, k) {
@@ -1232,19 +1348,25 @@
     }
   }
 
-  function countThickRuns(ctx, x, yFrom, yTo) {
+  function countThickRuns(ctx, x, yFrom, yTo, labelsOk) {
     const { D } = ctx;
     const step = yTo > yFrom ? 1 : -1;
-    let runs = 0, len = 0, longest = 0;
+    let runs = 0, len = 0, longest = 0, joined = false;
     const lengths = [];
+    // With labelsOk, a run counts only if it belongs to the stem's own
+    // component (a flag or beam), not a fingering digit or a slur nearby.
+    const isOk = (xx, y) => !labelsOk || labelsOk.has(ctx.labels[y * ctx.w + xx]);
+    const close = () => {
+      if (len >= 0.28 * D && joined) { runs++; lengths.push(len); }
+      longest = Math.max(longest, len);
+      len = 0; joined = false;
+    };
     for (let y = Math.round(yFrom); step > 0 ? y <= yTo : y >= yTo; y += step) {
       const ink = px(ctx, x, y) || px(ctx, x - 1, y) && px(ctx, x + 1, y);
-      if (ink) { len++; continue; }
-      if (len >= 0.28 * D) { runs++; lengths.push(len); }
-      longest = Math.max(longest, len);
-      len = 0;
+      if (ink) { len++; if (isOk(x, y) || isOk(x - 1, y) || isOk(x + 1, y)) joined = true; continue; }
+      close();
     }
-    if (len >= 0.28 * D) { runs++; lengths.push(len); }
+    close();
     return { runs, lengths };
   }
 
@@ -1296,11 +1418,18 @@
     const yTo = s.tip - s.dir * span; // toward the head
     // Count beams/flags close to the stem; further out a curved flag can be
     // cut twice, so look there only when nothing was found nearby.
+    // Components the stem is made of (staff-line removal may cut it).
+    const stemLabels = new Set();
+    for (let y = Math.round(Math.min(note.y, s.tip)); y <= Math.round(Math.max(note.y, s.tip)); y++) {
+      for (let x = Math.round(sx - stemHalf - 1); x <= Math.round(sx + stemHalf + 1); x++) {
+        if (x >= 0 && x < ctx.w && y >= 0 && y < ctx.h) { const id = ctx.labels[y * ctx.w + x]; if (id) stemLabels.add(id); }
+      }
+    }
     let count = 0;
     for (const off of [0.4, 0.75]) {
       for (const side of [-1, 1]) {
         const x = Math.round(sx + side * (stemHalf + off * D));
-        const r = countThickRuns(ctx, x, yFrom, yTo);
+        const r = countThickRuns(ctx, x, yFrom, yTo, stemLabels);
         let n = 0;
         for (const len of r.lengths) n += len > 1.15 * D ? Math.round(len / (0.75 * D)) : 1;
         count = Math.max(count, n);
@@ -1720,6 +1849,19 @@
       }
       if (rest) {
         c.role = 'rest';
+        // A dotted rest (6/8 music): a small round dot just to its right,
+        // inside the staff.
+        if (!rest.whole) {
+          for (let j = 1; j < comps.length; j++) {
+            const d = comps[j];
+            if (d.role || d === c) continue;
+            if (d.w < 0.2 * D || d.w > 0.7 * D || d.h < 0.2 * D || d.h > 0.7 * D || d.area < 0.55 * d.w * d.h) continue;
+            if (d.minX < c.maxX + 0.05 * D || d.minX > c.maxX + 0.9 * D) continue;
+            if (d.cy < posY(staff, d.cx, 1) - 0.3 * D || d.cy > posY(staff, d.cx, 7) + 0.3 * D) continue;
+            rest.beats *= 1.5; rest.dots = 1; d.role = 'dot';
+            break;
+          }
+        }
         rests.push(Object.assign(rest, { x: c.cx, y: c.cy, box: c }));
       }
     }

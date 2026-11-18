@@ -36,6 +36,8 @@ Accuracy on the test set (rendered with Verovio in four music fonts), as the sha
 | A user's piano screenshot (Twinkle with Alberti bass) and 4 degraded copies | 440 | 99.5% |
 | A phone photo of a printed piano book page (curved page, 5 systems, slurs, fingerings, pencil marks) | 185 | 97.8% |
 | A phone photo of a beginner piano page (Brother John, taken at an angle, shaded edge) | 40 | 97.5% |
+| 60 beginner piano pieces in method-book style (public-domain Essen folk melodies with bass lines, chords, lyrics, fingering, slurs) | 3362 | 97.5% |
+| The same 60 pieces as simulated phone photos (angle, page curl, uneven light, blur, JPEG) | 3362 | 88.8% |
 
 On every piano test image the two staves were paired into the right systems.
 
