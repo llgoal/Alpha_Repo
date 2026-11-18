@@ -1,6 +1,6 @@
-# ScoreLens Studio
+# ScoreLens 识谱钢琴
 
-A local browser app for reading simple sheet-music images, recognizing note heads on a single staff, editing the recognized sequence, and playing it back with different instrument voices.
+Take a photo of a short printed melody, read the notes, and play them back on a sampled grand piano. Everything runs in the browser; images are never uploaded.
 
 ## Run
 
@@ -10,32 +10,43 @@ From this directory:
 python3 -m http.server 8787
 ```
 
-Then open:
+Then open <http://127.0.0.1:8787/> and press **示例乐谱** (demo score), or upload a PNG/JPG/PDF, take a photo, drag an image in, or paste a screenshot. `mobile.html` redirects to the same page.
 
-```text
-http://127.0.0.1:8787/
-```
+## What v1 reads
 
-The default page adapts to phone, tablet, and desktop screens. Existing `mobile.html` links redirect to this same page.
+- One or more single-voice staves, printed (engraved) notation.
+- Treble and bass clef (alto/tenor are detected but rarely tested); a clef menu overrides detection.
+- Key signatures, accidentals (sharp, flat, natural) with bar-long carry.
+- Whole, half, quarter, eighth, sixteenth and thirty-second notes, single and double dots, beams and flags.
+- Whole/half/quarter/eighth/sixteenth rests, barlines, simple chords on one stem.
+- Ledger lines above and below the staff, slightly rotated photos, uneven lighting.
 
-## What Works Now
+Not yet: handwritten music, grand-staff piano scores played as two hands, multiple voices on one staff, ties, triplets, repeats and dynamics. The time signature is detected but playback follows the written note values.
 
-- Upload PNG/JPG sheet images.
-- Upload a PDF and render page 1 for recognition.
-- Use camera preview/capture from localhost.
-- Detect staff lines and note heads for clean monophonic scores.
-- Edit recognized notes in a list or text box.
-- Play back using piano, violin, flute, guitar, marimba, or pure tone voices.
-- Tune threshold, tempo, clef, transpose, and overlay display.
+Accuracy on the test set (rendered with Verovio in four music fonts): 98.8% of symbols on clean images (566 symbols) and 97.6% on blurred, noisy, rotated and photo-like copies (915 symbols).
+
+## Files
+
+- `index.html` – the app UI, drawing, and playback scheduling.
+- `omr.js` – the recognizer. `OMR.recognize(rgbaOrGray, width, height, { clef })` returns staves (clef, key, lines, barlines) and events (`{ type: 'note', pitches, midi, name, beats }` or `{ type: 'rest', beats }`). Works in the browser and in Node.
+- `player.js` – Web Audio piano: `PianoPlayer.unlock()` (call inside a tap), `load(midis)`, `playNote(midi, when, seconds)`, `stopAll()`.
+- `piano-samples.js` – Salamander Grand Piano samples embedded as base64, so playback works offline and inside sandboxed previews.
+- `demo.png` – the demo score.
+
+## How recognition works
+
+Normalize lighting and binarize; measure staff line thickness and spacing from run lengths; rescale so a staff space is about 20 px; deskew; find five-line staves; erase staff and ledger lines. Noteheads are found at the half-space positions where they can sit (solid cores for filled heads, enclosed holes for hollow ones), then stems, beams, flags, dots and accidentals are attached by measuring ink around each head. The header gives clef, key and time signature; rests are classified by shape. All thresholds are in staff spaces, so the scale of the image does not matter.
 
 ## Tests
 
-Run the playback cancellation regression tests with Node.js 18 or later:
+With Node.js 18 or later, from the repository root:
 
 ```sh
-node --test tests/playback.test.cjs
+node --test music-sheet-player/tests/omr.test.cjs
 ```
 
-## Limits
+Each fixture in `tests/fixtures/` is a score image with its expected `midi:beats` sequence; the tests need no packages.
 
-This is a strong prototype, not a production OMR engine. It is best with clean single-staff melodies. Dense piano scores, handwritten notation, multiple voices, ties, accidentals, lyrics, chord symbols, and percussion notation need a deeper OMR model and MusicXML export/import layer.
+## Credits
+
+Piano samples: [Salamander Grand Piano](https://archive.org/details/SalamanderGrandPianoV3) by Alexander Holm, CC BY 3.0.
