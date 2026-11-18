@@ -30,11 +30,12 @@ Accuracy on the test set (rendered with Verovio in four music fonts), as the sha
 | Set | Symbols | Accuracy |
 | --- | --- | --- |
 | Single-line scores, clean | 566 | 99.3% |
-| Single-line scores, blurred / noisy / rotated / photo-like | 915 | 98.7% |
+| Single-line scores, blurred / noisy / rotated / photo-like | 915 | 98.8% |
 | Piano (both hands), clean | 409 | 99.3% |
 | Piano (both hands), blurred / noisy / rotated / photo-like | 925 | 97.0% |
-| A user's piano screenshot (Twinkle with Alberti bass) and 4 degraded copies | 440 | 99.3% |
+| A user's piano screenshot (Twinkle with Alberti bass) and 4 degraded copies | 440 | 99.5% |
 | A phone photo of a printed piano book page (curved page, 5 systems, slurs, fingerings, pencil marks) | 185 | 97.8% |
+| A phone photo of a beginner piano page (Brother John, taken at an angle, shaded edge) | 40 | 97.5% |
 
 On every piano test image the two staves were paired into the right systems.
 
@@ -48,7 +49,7 @@ On every piano test image the two staves were paired into the right systems.
 
 ## How recognition works
 
-Normalize lighting and binarize; measure staff line thickness and spacing from run lengths; rescale so a staff space is about 20 px; deskew; find five-line staves in vertical strips (trying a few slopes in each, so curved lines of a photographed page are followed), link them across the page and trace each line; erase staff and ledger lines. Noteheads are found at the half-space positions where they can sit (solid cores for filled heads, enclosed holes for hollow ones), then stems, beams, flags, dots and accidentals are attached by measuring ink around each head. The header gives clef, key and time signature; rests are classified by shape. All thresholds are in staff spaces, so the scale of the image does not matter.
+Normalize lighting and binarize; measure staff line thickness and spacing from run lengths; rescale so a staff space is about 20 px; deskew; find five-line staves in vertical strips (trying a few slopes in each, so curved lines of a photographed page are followed), link them across the page and trace each line; erase staff and ledger lines. Noteheads are found at the half-space positions where they can sit (solid cores for filled heads, enclosed holes for hollow ones), then stems, beams, flags, dots and accidentals are attached by measuring ink around each head. The header gives clef, key and time signature; rests are classified by shape. If the bars of a line do not add up, the page is read a second time with a slightly darker threshold (faint stems in a photo) and the reading whose bars add up better is kept. All thresholds are in staff spaces, so the scale of the image does not matter.
 
 ## Tests
 

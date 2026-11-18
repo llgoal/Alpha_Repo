@@ -157,6 +157,7 @@
       if (between > best) { best = between; threshold = t; }
     }
     // Lean toward ink: thin, light staff lines in small images otherwise vanish.
+    dbg("otsu", threshold, "lean", lean);
     threshold = Math.min(200, Math.round(threshold + lean * (255 - threshold)));
     const bin = new Uint8Array(w * h);
     for (let i = 0; i < norm.length; i++) bin[i] = norm[i] <= threshold ? 1 : 0;
@@ -290,7 +291,38 @@
   // Diatonic index (octave * 7 + letter) of the bottom staff line.
   const CLEF_BOTTOM = { treble: 4 * 7 + 2, bass: 2 * 7 + 4, alto: 3 * 7 + 3, tenor: 3 * 7 + 1 };
 
+  // Measures that add up: the share of full bars (not the first or last of
+  // a line) whose notes and rests fill the usual bar length.
+  function barConsistency(result) {
+    let good = 0, all = 0;
+    for (const st of result.staves) {
+      const sums = new Map();
+      for (const e of result.events) if (e.staff === st.index) sums.set(e.measure, (sums.get(e.measure) || 0) + e.beats);
+      const vals = [...sums.values()];
+      if (vals.length < 2) continue;
+      const count = new Map();
+      for (const v of vals) count.set(v, (count.get(v) || 0) + 1);
+      const mode = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      vals.forEach((v, i) => { all++; if (Math.abs(v - mode) < 1e-6 || ((i === 0 || i === vals.length - 1) && v < mode)) good++; });
+    }
+    return all ? good / all : 1;
+  }
+
+  // A photo's faint strokes can vanish at the usual threshold. When bars do
+  // not add up, read again with a slightly darker threshold and keep the
+  // reading whose bars add up better.
   function recognize(rgbaOrGray, width, height, options = {}) {
+    const first = recognizeOnce(rgbaOrGray, width, height, options, 0);
+    if (options.retry === false || !first.staves.length) return first;
+    const c0 = barConsistency(first);
+    if (c0 >= 0.999) return first;
+    const second = recognizeOnce(rgbaOrGray, width, height, options, 0.1);
+    const c1 = barConsistency(second);
+    dbg('consistency', c0.toFixed(3), c1.toFixed(3));
+    return c1 > c0 + 0.02 ? second : first;
+  }
+
+  function recognizeOnce(rgbaOrGray, width, height, options, extraLean) {
     let gray = rgbaOrGray.length === width * height * 4 ? rgbaToGray(rgbaOrGray, width, height) : rgbaOrGray;
     let w = width, h = height, scale = 1;
 
@@ -301,8 +333,8 @@
       const nw = Math.round(w * f), nh = Math.round(h * f);
       gray = resizeGray(gray, w, h, nw, nh); w = nw; h = nh; scale *= f;
     }
-    let lean = 0;
-    let bin = binarize(gray, w, h);
+    let lean = extraLean;
+    let bin = binarize(gray, w, h, lean);
     let metrics = staffMetrics(bin, w, h);
 
     // Normalize so a staff space is about 20 px.
@@ -311,7 +343,7 @@
       const nw = Math.round(w * f), nh = Math.round(h * f);
       if (nw * nh < 40e6) {
         gray = resizeGray(gray, w, h, nw, nh); w = nw; h = nh; scale *= f;
-        if (f > 1) lean = 0.3;
+        if (f > 1) lean = 0.3 + extraLean;
         bin = binarize(gray, w, h, lean);
         metrics = staffMetrics(bin, w, h);
       }
@@ -575,7 +607,8 @@
           for (let k = 0; k < 5; k++) {
             const j = k + sh;
             const ref = j < 0 ? near.ys[0] - (near.ys[1] - near.ys[0]) : j > 4 ? near.ys[4] + (near.ys[4] - near.ys[3]) : near.ys[j];
-            s += Math.abs(ref - an.ys[k]);
+            // Carry the neighbour along its own slope to this x.
+            s += Math.abs(ref + (near.ys.slope || 0) * (an.x - near.x) - an.ys[k]);
           }
           return s / 5;
         };
@@ -585,7 +618,7 @@
           // A group shifted by one line (a beam taken as a staff line)
           // matches the neighbour better when shifted: drop it.
           best = g; bestD = dy;
-          shifted = Math.min(diff(-1), diff(1)) < dy;
+          shifted = Math.min(diff(-1), diff(1)) < 0.5 * dy;
         }
       }
       if (best) { if (!shifted) best.anchors.push(an); }
@@ -595,6 +628,7 @@
     for (const g of groups) {
       const pts = g.anchors.filter(a => !a.whole).sort((a, b) => a.x - b.x);
       const whole = g.anchors.find(a => a.whole);
+      dbg("group", g.anchors.length, pts.map(p => Math.round(p.x) + ":" + Math.round(p.ys[0])).join(" "));
       if (!whole && pts.length < 2) continue;
       // A guide per line: interpolate between strip anchors.
       const guide = k => {
@@ -1111,7 +1145,9 @@
   // Longest vertical ink run through rows near y, measured from y in one direction.
   function verticalReach(ctx, xa, xb, y, dir, maxLen) {
     let best = 0, bestX = Math.round((xa + xb) / 2);
-    const maxGap = Math.max(1, Math.round(0.15 * ctx.D));
+    // A thin stem crossing a staff line can lose a few pixels when the line
+    // is erased: bridge breaks of up to a line's thickness.
+    const maxGap = Math.max(1, Math.round(0.15 * ctx.D), ctx.T + 2);
     const maxDrift = Math.max(1, Math.round(0.25 * ctx.D));
     const minStraight = Math.round(0.4 * ctx.D);
     for (let x = Math.round(xa); x <= Math.round(xb); x++) {
@@ -1134,8 +1170,14 @@
         if (sd) { cx += sd; stepDir = sd; cur = nxt; len++; straight = 0; continue; }
         // Bridge a short break (a faint stem in a photo).
         let jump = 0;
-        for (let g = 1; g <= maxGap && !jump; g++) if (px(ctx, cx, nxt + g * dir)) jump = g;
+        let jdx = 0;
+        for (let g = 1; g <= maxGap && !jump; g++) {
+          for (const dx of [0, -1, 1]) {
+            if (Math.abs(cx + dx - x) <= maxDrift && px(ctx, cx + dx, nxt + g * dir)) { jump = g; jdx = dx; break; }
+          }
+        }
         if (!jump) break;
+        cx += jdx;
         cur = nxt + jump * dir; len += 1 + jump; gap = 0;
       }
       const reach = Math.abs(cur - y);
@@ -1594,7 +1636,11 @@
       const up = trace(x, ym, -1), down = trace(x, ym, 1);
       if (!nearTopFor(up.y, x) || !nearBottomFor(down.y, x)) continue;
       // Straight: a flag or a slur curves.
-      if (Math.abs(up.x - x) > 0.2 * D || Math.abs(down.x - x) > 0.2 * D) continue;
+      // (A photo taken at an angle leans a barline a few degrees.)
+      // Only a long (system-wide) line is trusted to lean; within one staff
+      // a leaning stroke is more often a stem whose head was missed.
+      const lean = Math.abs(down.x - up.x);
+      if (down.y - up.y > 6 * D ? lean > 0.1 * (down.y - up.y) + 2 : (Math.abs(up.x - x) > 0.2 * D || Math.abs(down.x - x) > 0.2 * D)) continue;
       let straight = true;
       for (let k = 1; k <= 7 && straight; k += 2) {
         const yy = Math.round(posY(staff, x, k));
