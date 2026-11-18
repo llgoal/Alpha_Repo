@@ -288,7 +288,7 @@
   const SHARP_ORDER = [3, 0, 4, 1, 5, 2, 6]; // F C G D A E B
   const FLAT_ORDER = [6, 2, 5, 1, 4, 0, 3]; // B E A D G C F
   // Diatonic index (octave * 7 + letter) of the bottom staff line.
-  const CLEF_BOTTOM = { treble: 4 * 7 + 2, bass: 2 * 7 + 4, alto: 3 * 7 + 3, tenor: 2 * 7 + 5 };
+  const CLEF_BOTTOM = { treble: 4 * 7 + 2, bass: 2 * 7 + 4, alto: 3 * 7 + 3, tenor: 3 * 7 + 1 };
 
   function recognize(rgbaOrGray, width, height, options = {}) {
     let gray = rgbaOrGray.length === width * height * 4 ? rgbaToGray(rgbaOrGray, width, height) : rgbaOrGray;

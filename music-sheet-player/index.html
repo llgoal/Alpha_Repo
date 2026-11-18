@@ -313,7 +313,7 @@
     const step = [0, 2, 4, 5, 7, 9, 11];
     for (const s of res.staves) {
       if (s.clef === clef) continue;
-      const old = { treble: 4 * 7 + 2, bass: 2 * 7 + 4, alto: 3 * 7 + 3, tenor: 2 * 7 + 5 }[s.clef];
+      const old = { treble: 4 * 7 + 2, bass: 2 * 7 + 4, alto: 3 * 7 + 3, tenor: 3 * 7 + 1 }[s.clef];
       if (old == null) continue;
       for (const ev of res.events) {
         if (ev.staff !== s.index || ev.type !== 'note') continue;
@@ -486,16 +486,18 @@
     let ready;
     try { ready = PianoPlayer.unlock(); } catch (e) { setStatus(e.message, true); return; }
     setPlaying(true);
+    const request = playing; // stop() or a newer play() replaces this object
     setStatus('正在准备钢琴音色…');
     try {
       await ready;
       await PianoPlayer.load(midis);
     } catch (e) {
+      if (playing !== request) return;
       setPlaying(false);
       setStatus('钢琴音色加载失败：' + (e.message || e), true);
       return;
     }
-    if (!playing) return; // stopped while loading
+    if (playing !== request) return; // stopped or restarted while loading
     const ctx = PianoPlayer.context;
     const spb = secondsPerBeat();
     const startAt = ctx.currentTime + 0.15;
@@ -515,7 +517,7 @@
     playing.schedule = schedule;
     setStatus(`正在播放（♩ = ${$('tempo').value}）`);
     const tick = () => {
-      if (!playing) return;
+      if (playing !== request) return;
       const now = ctx.currentTime;
       if (now >= playing.end + 0.2) { stop(); setStatus('播放完毕。'); return; }
       const cur = schedule.find(s => now >= s.start && now < s.end);
