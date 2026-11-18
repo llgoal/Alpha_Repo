@@ -1475,11 +1475,15 @@
       const spacing = medianDiff(staffLines);
       const bottomLine = staffLines[4];
       const step = Math.round((bottomLine - y) / (spacing / 2));
-      const baseMidi = clef === 'bass' ? 43 : 64;
-      const majorScaleSteps = [0, 2, 4, 5, 7, 9, 11];
-      const octaveShift = Math.floor(step / 7);
-      const degree = ((step % 7) + 7) % 7;
-      return baseMidi + octaveShift * 12 + majorScaleSteps[degree];
+      // Count staff positions as letter names (C D E F G A B), starting from the
+      // bottom line: E4 in treble clef, G2 in bass clef. Each line or space is
+      // one letter step, so the natural note matches what the staff shows.
+      const naturalSemitones = [0, 2, 4, 5, 7, 9, 11];
+      const bottomLetter = clef === 'bass' ? 4 + 2 * 7 : 2 + 4 * 7;
+      const letterIndex = bottomLetter + step;
+      const octave = Math.floor(letterIndex / 7);
+      const letter = ((letterIndex % 7) + 7) % 7;
+      return (octave + 1) * 12 + naturalSemitones[letter];
     }
 
     function medianDiff(lines) {
