@@ -1239,10 +1239,17 @@
       }
       const wanted = [...new Set(notes.map(note => nearestPianoSampleMidi(noteToMidi(note))))];
       try {
-        await Promise.all(wanted.filter(midi => !pianoBuffers.has(midi)).map(midi => {
-          const decoding = decodeAudio(audioCtx, base64ToArrayBuffer(window.PIANO_SAMPLES[midi]));
+        // Await decodes another Play started too, so a quick Stop/Play still
+        // waits for the real samples instead of using the synth fallback.
+        await Promise.all(wanted.map(midi => {
+          if (pianoBuffers.has(midi)) return pianoBuffers.get(midi);
+          const decoding = decodeAudio(audioCtx, base64ToArrayBuffer(window.PIANO_SAMPLES[midi]))
+            .then(buffer => {
+              pianoBuffers.set(midi, buffer);
+              return buffer;
+            });
           pianoBuffers.set(midi, decoding);
-          return decoding.then(buffer => pianoBuffers.set(midi, buffer));
+          return decoding;
         }));
         return pianoBuffers;
       } catch (error) {
