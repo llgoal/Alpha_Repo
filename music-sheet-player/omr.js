@@ -343,7 +343,7 @@
     const ii = integral(sym, w, h);
     const { labels, comps } = labelComponents(sym, w, h);
     const ctx = { gray, bin, sym, ii, labels, comps, w, h, D, T, staves };
-    if (options.debug) result.debug = { sym, bin, w, h };
+    if (options.debug) result.debug = { sym, bin, gray, w, h, staves };
 
     let previousClef = options.clef || 'treble';
     for (let s = 0; s < staves.length; s++) {
@@ -375,7 +375,7 @@
         findDot(ctx, staff, note);
         findAccidental(ctx, staff, note);
       }
-      const bars = findBarlines(ctx, staff, header.end);
+      const bars = findBarlines(ctx, staff, header.end, valid);
       const rests = findRests(ctx, staff, header.end);
       result.staves.push(describeStaff(staff, bars));
       result.events.push(...assembleStaff(ctx, staff, valid, rests, bars));
@@ -431,62 +431,210 @@
 
   // ---------- staves ----------
 
+  // Finds 5-line staves. The page is cut into vertical strips: within a
+  // strip even a curved or slanted line (a photo of a book page) is nearly
+  // straight. Staves found in neighbouring strips are linked, and each line
+  // is then traced across the page.
   function findStaves(bin, w, h, D, T) {
     const minRun = Math.round(D * 2);
-    const rowScore = new Float64Array(h);
+    const stripW = Math.max(Math.round(12 * D), Math.round(w / 8));
+    const strips = [];
+    for (let x0 = 0; x0 < w; x0 += stripW) strips.push([x0, Math.min(w, x0 + stripW)]);
+    if (strips.length > 1 && strips[strips.length - 1][1] - strips[strips.length - 1][0] < stripW / 2) {
+      const last = strips.pop(); strips[strips.length - 1][1] = last[1];
+    }
+    // Whole-width pass too: on clean images it is the most reliable.
+    const passes = [[0, w], ...(strips.length > 1 ? strips : [])];
+
+    // Pixels on short horizontal runs: line pieces even where a line slants.
+    const mask = new Uint8Array(w * h);
+    const shortRun = Math.round(0.8 * D);
     for (let y = 0; y < h; y++) {
-      let x = 0, count = 0;
+      let x = 0;
       while (x < w) {
         if (!bin[y * w + x]) { x++; continue; }
         const start = x;
         while (x < w && bin[y * w + x]) x++;
-        if (x - start >= minRun) count += x - start;
+        if (x - start >= shortRun) mask.fill(1, y * w + start, y * w + x);
       }
-      rowScore[y] = count;
     }
-    let max = 0;
-    for (let y = 0; y < h; y++) max = Math.max(max, rowScore[y]);
-    if (!max) return [];
-    const lines = [];
-    const thr = max * 0.25;
-    let y = 0;
-    while (y < h) {
-      if (rowScore[y] < thr) { y++; continue; }
-      let s = 0, n = 0;
-      const start = y;
-      while (y < h && rowScore[y] >= thr) { s += y * rowScore[y]; n += rowScore[y]; y++; }
-      if (y - start <= T * 3 + 2) lines.push({ y: s / n, top: start, bottom: y - 1 });
-    }
-    dbg('lines', lines.map(l => l.y.toFixed(1) + '/' + (l.bottom - l.top + 1)).join(' '), 'D', D.toFixed(2), 'T', T);
-    const staves = [];
-    // Score a run of 5 candidate lines: even spacing and line-like thickness.
-    // (A horizontal beam just above a staff can pass for an extra line.)
-    const groupScore = i => {
-      if (i + 4 >= lines.length) return Infinity;
-      const group = lines.slice(i, i + 5);
-      const gaps = group.slice(1).map((l, k) => l.y - group[k].y);
-      if (!gaps.every(g => g > D * 0.7 && g < D * 1.35)) return Infinity;
-      const ratio = Math.max(...gaps) / Math.min(...gaps);
-      if (ratio >= 1.4) return Infinity;
-      const thick = group.reduce((a, l) => a + Math.max(0, (l.bottom - l.top + 1) - (T + 1)) / T, 0);
-      return ratio + 0.15 * thick;
+    const findIn = (x0, x1, slope = 0) => {
+      const rowScore = new Float64Array(h);
+      let max = 0;
+      if (slope === 0) {
+        for (let y = 0; y < h; y++) {
+          let x = x0, count = 0;
+          while (x < x1) {
+            if (!bin[y * w + x]) { x++; continue; }
+            const start = x;
+            while (x < x1 && bin[y * w + x]) x++;
+            if (x - start >= minRun) count += x - start;
+          }
+          rowScore[y] = count;
+        }
+      } else {
+        // Sheared projection about the strip centre.
+        const xc = (x0 + x1) / 2;
+        for (let x = x0; x < x1; x++) {
+          const dy = Math.round(slope * (x - xc));
+          for (let y = Math.max(0, -dy); y < Math.min(h, h - dy); y++) rowScore[y] += mask[(y + dy) * w + x];
+        }
+      }
+      for (let y = 0; y < h; y++) if (rowScore[y] > max) max = rowScore[y];
+      if (max < Math.min(x1 - x0, 6 * D) * 0.5) return [];
+      const lines = [];
+      const thr = max * 0.25;
+      let y = 0;
+      while (y < h) {
+        if (rowScore[y] < thr) { y++; continue; }
+        let sy = 0, n = 0, peak = 0;
+        const start = y;
+        while (y < h && rowScore[y] >= thr) { sy += y * rowScore[y]; n += rowScore[y]; peak = Math.max(peak, rowScore[y]); y++; }
+        if (y - start <= T * 3 + 2) lines.push({ y: sy / n, top: start, bottom: y - 1, peak });
+      }
+      // Score a run of 5 candidate lines: even spacing and line-like thickness.
+      // (A horizontal beam just above a staff can pass for an extra line.)
+      const groupScore = i => {
+        if (i + 4 >= lines.length) return Infinity;
+        const group = lines.slice(i, i + 5);
+        const gaps = group.slice(1).map((l, k) => l.y - group[k].y);
+        if (!gaps.every(g => g > D * 0.7 && g < D * 1.35)) return Infinity;
+        const ratio = Math.max(...gaps) / Math.min(...gaps);
+        if (ratio >= 1.4) return Infinity;
+        const thick = group.reduce((a, l) => a + Math.max(0, (l.bottom - l.top + 1) - (T + 1)) / T, 0);
+        return ratio + 0.15 * thick;
+      };
+      const found = [];
+      for (let i = 0; i + 4 < lines.length;) {
+        const here = groupScore(i);
+        if (here === Infinity) { i++; continue; }
+        if (groupScore(i + 1) < here - 0.05) { i++; continue; }
+        const ys = lines.slice(i, i + 5).map(l => l.y);
+        ys.score = here;
+        ys.slope = slope;
+        // The right slope gives the sharpest peaks: judge by the weakest line.
+        ys.peak = Math.min(...lines.slice(i, i + 5).map(l => l.peak));
+        found.push(ys);
+        i += 5;
+      }
+      return found;
     };
-    for (let i = 0; i + 4 < lines.length;) {
-      const here = groupScore(i);
-      if (here === Infinity) { i++; continue; }
-      if (groupScore(i + 1) < here - 0.05) { i++; continue; }
-      staves.push({ lines: lines.slice(i, i + 5).map(l => l.y) });
-      i += 5;
+
+    // Collect anchors: (x, five line ys) from every pass.
+    const anchors = [];
+    passes.forEach(([x0, x1], pi) => {
+      if (pi === 0) {
+        for (const ys of findIn(x0, x1)) anchors.push({ x: (x0 + x1) / 2, ys, whole: true });
+        return;
+      }
+      // A strip of a curved page: lines may slant. Try a few slopes and
+      // keep the best-scoring group for each staff.
+      const got = [];
+      for (let sl = -0.15; sl <= 0.151; sl += 0.025) {
+        const slope = Math.abs(sl) < 1e-6 ? 0 : sl;
+        for (const ys of findIn(x0, x1, slope)) {
+          const same = got.find(o => Math.abs(o.ys[2] - ys[2]) < 2 * D);
+          if (!same) got.push({ ys });
+          else if (ys.peak > same.ys.peak * 1.05 || (ys.peak >= same.ys.peak * 0.95 && ys.score < same.ys.score)) same.ys = ys;
+        }
+      }
+      for (const g of got) {
+        // Anchor at the middle of the part of the strip the staff covers
+        // (a staff may end inside the strip).
+        const xc = (x0 + x1) / 2, sl = g.ys.slope || 0;
+        let sx = 0, n = 0;
+        for (let x = x0; x < x1; x++) {
+          let c = 0;
+          for (const ly of g.ys) {
+            const yy = Math.round(ly + sl * (x - xc));
+            if (yy > 0 && yy < h - 1 && (mask[yy * w + x] || mask[(yy - 1) * w + x] || mask[(yy + 1) * w + x])) c++;
+          }
+          if (c >= 4) { sx += x; n++; }
+        }
+        if (n < 3 * D) continue;
+        const xm = sx / n;
+        const ys = g.ys.map(v => v + sl * (xm - xc));
+        ys.slope = sl; ys.score = g.ys.score;
+        dbg('strip', x0, x1, sl.toFixed(3), Math.round(xm), ys.map(v => v.toFixed(0)).join(','));
+        anchors.push({ x: xm, ys, whole: false });
+      }
+    });
+    dbg('staff anchors', anchors.length, anchors.map(a => Math.round(a.x) + ':' + a.ys.map(v => v.toFixed(0)).join(',')).join(' '));
+    // Link anchors into staves: same staff when the lines nearly coincide.
+    // Strip anchors are sorted by x so a staff can bend gradually.
+    anchors.sort((a, b) => (b.whole - a.whole) || a.x - b.x);
+    const groups = [];
+    for (const an of anchors) {
+      let best = null, bestD = Infinity, shifted = false;
+      for (const g of groups) {
+        // Compare with the group's anchor nearest in x.
+        let near = g.anchors[0];
+        for (const o of g.anchors) if (Math.abs(o.x - an.x) < Math.abs(near.x - an.x)) near = o;
+        const diff = sh => {
+          let s = 0;
+          for (let k = 0; k < 5; k++) {
+            const j = k + sh;
+            const ref = j < 0 ? near.ys[0] - (near.ys[1] - near.ys[0]) : j > 4 ? near.ys[4] + (near.ys[4] - near.ys[3]) : near.ys[j];
+            s += Math.abs(ref - an.ys[k]);
+          }
+          return s / 5;
+        };
+        const dy = diff(0);
+        const tol = 0.8 * D + 0.6 * D * Math.abs(near.x - an.x) / stripW;
+        if (dy < Math.min(tol, 2.4 * D) && dy < bestD) {
+          // A group shifted by one line (a beam taken as a staff line)
+          // matches the neighbour better when shifted: drop it.
+          best = g; bestD = dy;
+          shifted = Math.min(diff(-1), diff(1)) < dy;
+        }
+      }
+      if (best) { if (!shifted) best.anchors.push(an); }
+      else groups.push({ anchors: [an] });
     }
+    const staves = [];
+    for (const g of groups) {
+      const pts = g.anchors.filter(a => !a.whole).sort((a, b) => a.x - b.x);
+      const whole = g.anchors.find(a => a.whole);
+      if (!whole && pts.length < 2) continue;
+      // A guide per line: interpolate between strip anchors.
+      const guide = k => {
+        const ys = new Float32Array(w);
+        if (!pts.length) { ys.fill(whole.ys[k]); return ys; }
+        for (let x = 0; x < w; x++) {
+          let i = 0;
+          while (i + 1 < pts.length && pts[i + 1].x < x) i++;
+          const a = pts[i], b = pts[Math.min(i + 1, pts.length - 1)];
+          // Each anchor knows its local slope: blend the two tangents.
+          const at = (p, xx) => p.ys[k] + (p.ys.slope || 0) * (xx - p.x);
+          if (x <= pts[0].x) ys[x] = at(pts[0], x);
+          else if (x >= pts[pts.length - 1].x) ys[x] = at(pts[pts.length - 1], x);
+          else {
+            const t = (x - a.x) / Math.max(1, b.x - a.x);
+            ys[x] = at(a, x) * (1 - t) + at(b, x) * t;
+          }
+        }
+        return ys;
+      };
+      const guides = [0, 1, 2, 3, 4].map(guide);
+      const xc = Math.round(pts.length ? pts[Math.floor(pts.length / 2)].x : w / 2);
+      staves.push({ lines: guides.map(gy => gy[xc]), guides });
+    }
+    staves.sort((a, b) => a.lines[0] - b.lines[0]);
+    // Drop staves that overlap a better one (duplicates from passes).
+    for (let i = staves.length - 1; i > 0; i--) {
+      if (staves[i].lines[0] < staves[i - 1].lines[4] - 0.5 * D) staves.splice(i, 1);
+    }
+    dbg('lines', staves.map(st => st.lines.map(v => v.toFixed(1)).join(' ')).join(' | '), 'D', D.toFixed(2), 'T', T);
+
     for (const staff of staves) {
       // Horizontal extent: columns where at least 4 of the 5 lines are inked.
       const hit = new Uint8Array(w);
       for (let x = 0; x < w; x++) {
         let c = 0;
-        for (const ly of staff.lines) {
-          const yy = Math.round(ly);
+        for (const gy of staff.guides) {
+          const yy = Math.round(gy[x]);
           let found = 0;
-          for (let d = -T - 1; d <= T + 1 && !found; d++) {
+          for (let d = -T - 2; d <= T + 2 && !found; d++) {
             const q = yy + d;
             if (q >= 0 && q < h && bin[q * w + x]) found = 1;
           }
@@ -507,38 +655,48 @@
       }
       staff.left = bestStart;
       staff.right = bestEnd;
-      // Track each line's y per column to follow slight curvature.
-      staff.lineY = staff.lines.map(ly => {
-        const ys = new Float32Array(w).fill(ly);
-        let cur = ly;
+      // Trace each line along its guide to follow curvature.
+      staff.lineY = staff.guides.map(gy => {
+        const ys = new Float32Array(w);
+        let cur;
+        // Follow the line as an offset from its guide: where a chord or a
+        // beam hides it, the offset is kept and the guide carries the slope.
+        let off = 0;
         const track = (x) => {
+          const base = gy[x];
+          const cur = base + off;
           let best = null;
-          for (let d = -T - 1; d <= T + 1; d++) {
-            const yy = Math.round(cur + d);
-            if (yy < 0 || yy >= h || !bin[yy * w + x]) continue;
-            let a = yy, b = yy;
-            while (a > 0 && bin[(a - 1) * w + x]) a--;
-            while (b < h - 1 && bin[(b + 1) * w + x]) b++;
-            if (b - a + 1 <= T + 2) { best = (a + b) / 2; break; }
+          for (let d = 0; d <= T + 1 && best === null; d++) {
+            for (const sgn of d ? [-1, 1] : [1]) {
+              const yy = Math.round(cur + sgn * d);
+              if (yy < 0 || yy >= h || !bin[yy * w + x]) continue;
+              let a = yy, b = yy;
+              while (a > 0 && bin[(a - 1) * w + x]) a--;
+              while (b < h - 1 && bin[(b + 1) * w + x]) b++;
+              if (b - a + 1 <= T + 2) { best = (a + b) / 2; break; }
+            }
           }
-          if (best !== null && Math.abs(best - cur) <= 1.5) cur = cur * 0.7 + best * 0.3;
-          // After deskewing, lines are nearly straight: never drift far.
-          const lim = Math.max(2, 0.15 * D);
-          cur = Math.max(ly - lim, Math.min(ly + lim, cur));
-          ys[x] = cur;
+          if (best !== null && Math.abs(best - cur) <= 1.5) off = off * 0.7 + (best - base) * 0.3;
+          // Stay near the guide: never wander onto a beam or slur.
+          const lim = Math.max(2, 0.4 * D);
+          off = Math.max(-lim, Math.min(lim, off));
+          ys[x] = base + off;
         };
         const mid = Math.round((staff.left + staff.right) / 2);
         for (let x = mid; x <= staff.right; x++) track(x);
-        cur = ys[mid];
+        off = ys[mid] - gy[mid];
         for (let x = mid; x >= staff.left; x--) track(x);
-        for (let x = 0; x < staff.left; x++) ys[x] = ys[staff.left];
-        for (let x = staff.right + 1; x < w; x++) ys[x] = ys[staff.right];
+        for (let x = 0; x < staff.left; x++) ys[x] = ys[staff.left] + (gy[x] - gy[staff.left]);
+        for (let x = staff.right + 1; x < w; x++) ys[x] = ys[staff.right] + (gy[x] - gy[staff.right]);
         return ys;
       });
+      staff.lines = staff.lineY.map(ys => ys[Math.round((staff.left + staff.right) / 2)]);
+      delete staff.guides;
       staff.space = D;
     }
-    return staves;
+    return staves.filter(st => st.right - st.left > 6 * D);
   }
+
 
   // y of staff position k at column x: k=0 top line, k=8 bottom line,
   // odd k are spaces, negative/over 8 continue with ledger positions.
@@ -703,10 +861,72 @@
     const innerL = L + 0.25 * W, innerR = R - 0.25 * W;
     const above = fill(ctx, innerL, y - 0.85 * D, innerR, y - 0.62 * D);
     const below = fill(ctx, innerL, y + 0.62 * D, innerR, y + 0.85 * D);
-    if (above > 0.45 || below > 0.45) return null;
+    let stacked = false;
+    if (above > 0.45 || below > 0.45) {
+      // A chord in thirds: heads touch and form one solid column. Accept
+      // when this position is a whole number of head heights from the
+      // column's top and bottom (positions in between are not heads).
+      const row = yy => fill(ctx, innerL, yy, innerR, yy) >= 0.6;
+      let yT = Math.round(y), yB = Math.round(y);
+      while (yT > y - 5 * D && row(yT - 1)) yT--;
+      while (yB < y + 5 * D && row(yB + 1)) yB++;
+      const H = yB - yT + 1;
+      const n = Math.round(H / D);
+      const off = (y - (yT + 0.5 * H / n)) / (H / n);
+      if (n < 2 || n > 4 || Math.abs(H / n - D) > 0.3 * D || Math.abs(off - Math.round(off)) > 0.25) return null;
+      // The column stands free: little ink beside it (a stem may run up
+      // one side). A clef or a smudge has curves wrapping around.
+      const sideL = fill(ctx, L - 0.4 * D, yT, L - 0.1 * D, yB);
+      const sideR = fill(ctx, R + 0.1 * D, yT, R + 0.4 * D, yB);
+      if (Math.min(sideL, sideR) > 0.12 || Math.max(sideL, sideR) > 0.4) return null;
+      // Every head in the column is about as wide as this one.
+      for (let i = 0; i < n; i++) {
+        const hy = yT + (i + 0.5) * H / n;
+        let a = Math.round(mx), b = a;
+        const bf = x => fill(ctx, x, hy - 0.2 * D, x, hy + 0.2 * D) >= 0.5;
+        while (a > mx - 1.5 * D && bf(a - 1)) a--;
+        while (b < mx + 1.5 * D && bf(b + 1)) b++;
+        if (Math.abs((b - a + 1) - W) > 0.35 * D) return null;
+      }
+      // Touching oval heads pinch where they meet; a digit or a clef does not.
+      let pinch = 0;
+      for (let i = 1; i < n; i++) {
+        const jy = yT + i * H / n;
+        let a = Math.round(mx), b = a;
+        const bf = x => fill(ctx, x, jy - 0.06 * D, x, jy + 0.06 * D) >= 0.5;
+        while (a > mx - 1.5 * D && bf(a - 1)) a--;
+        while (b < mx + 1.5 * D && bf(b + 1)) b++;
+        pinch = Math.max(pinch, (b - a + 1) / W);
+      }
+      // A chord has a thin stem running on past the column (a stacked
+      // time signature or a clef does not).
+      const thinStem = (xa, xb, y0, dir) => {
+        const r = verticalReach(ctx, xa, xb, y0, dir, 10 * D);
+        if (r.length < 1.8 * D) return false;
+        // Mostly thin past the column (it may cross another head).
+        const from = dir < 0 ? y0 - (y0 - yT) : y0 + (yB - y0);
+        const beyond = r.length - Math.abs(from - y0);
+        if (beyond < 1.2 * D) return false;
+        let thin = 0, all = 0;
+        for (let t = 0.3 * D; t < beyond; t += 2) {
+          const yy = Math.round(from + dir * t);
+          let a = r.x, b = r.x;
+          while (px(ctx, a - 1, yy) && r.x - a < D) a--;
+          while (px(ctx, b + 1, yy) && b - r.x < D) b++;
+          all++;
+          if (b - a + 1 <= 0.4 * D) thin++;
+        }
+        return thin >= 0.6 * all && thin * 2 >= 1.0 * D;
+      };
+      const hasStem = thinStem(R - 0.4 * D, R + 0.15 * D, yT + 0.3 * D, -1) || thinStem(L - 0.15 * D, L + 0.4 * D, yB - 0.3 * D, 1);
+      dbg('stack-pinch', Math.round(mx), k, pinch.toFixed(2), hasStem);
+      if (!hasStem) return null;
+      stacked = true;
+      dbg("stacked", Math.round(mx), k, n, sideL.toFixed(2), sideR.toFixed(2));
+    }
     const body = fill(ctx, L + 0.1 * W, y - 0.3 * D, R - 0.1 * W, y + 0.3 * D);
     if (body < 0.75) return null;
-    return { x: mx, y, k, L, R, filled: true, score: body };
+    return { x: mx, y, k, L, R, filled: true, score: stacked ? body * 0.97 : body, stacked };
   }
 
   // Hollow heads (half and whole notes): a white centre enclosed by ink on
@@ -891,6 +1111,9 @@
   // Longest vertical ink run through rows near y, measured from y in one direction.
   function verticalReach(ctx, xa, xb, y, dir, maxLen) {
     let best = 0, bestX = Math.round((xa + xb) / 2);
+    const maxGap = Math.max(1, Math.round(0.15 * ctx.D));
+    const maxDrift = Math.max(1, Math.round(0.25 * ctx.D));
+    const minStraight = Math.round(0.4 * ctx.D);
     for (let x = Math.round(xa); x <= Math.round(xb); x++) {
       // Start at the first inked pixel within 0.3 spaces of y.
       let yy = Math.round(y);
@@ -900,12 +1123,20 @@
       }
       if (!found) continue;
       let len = 0, gap = 0;
-      let cur = yy;
+      let cur = yy, cx = x, straight = 0, stepDir = 0;
       while (len < maxLen) {
         const nxt = cur + dir;
-        if (px(ctx, x, nxt) || px(ctx, x - 1, nxt) && px(ctx, x + 1, nxt)) { cur = nxt; len += 1 + gap; gap = 0; }
-        else if (gap < 1 && px(ctx, x, nxt + dir)) { cur = nxt; gap++; }
-        else break;
+        if (px(ctx, cx, nxt) || px(ctx, cx - 1, nxt) && px(ctx, cx + 1, nxt)) { cur = nxt; len += 1 + gap; gap = 0; straight++; continue; }
+        // A stem leaning a little in a photo steps sideways now and then,
+        // always the same way (a curve bends more often).
+        const canStep = sd => straight >= minStraight && (!stepDir || stepDir === sd) && Math.abs(cx + sd - x) <= maxDrift && px(ctx, cx + sd, nxt);
+        const sd = canStep(-1) ? -1 : canStep(1) ? 1 : 0;
+        if (sd) { cx += sd; stepDir = sd; cur = nxt; len++; straight = 0; continue; }
+        // Bridge a short break (a faint stem in a photo).
+        let jump = 0;
+        for (let g = 1; g <= maxGap && !jump; g++) if (px(ctx, cx, nxt + g * dir)) jump = g;
+        if (!jump) break;
+        cur = nxt + jump * dir; len += 1 + jump; gap = 0;
       }
       const reach = Math.abs(cur - y);
       if (reach > best) { best = reach; bestX = x; }
@@ -991,13 +1222,18 @@
     const { D } = ctx;
     const cx = note.x, cy = note.y;
     // Sample just above and below the centre, clear of a line through it.
-    const mid = Math.max(
-      meanGray(ctx, cx - 0.12 * D, cy - 0.3 * D, cx + 0.12 * D, cy - 0.14 * D),
-      meanGray(ctx, cx - 0.12 * D, cy + 0.14 * D, cx + 0.12 * D, cy + 0.3 * D));
+    const up = meanGray(ctx, cx - 0.12 * D, cy - 0.3 * D, cx + 0.12 * D, cy - 0.14 * D);
+    const down = meanGray(ctx, cx - 0.12 * D, cy + 0.14 * D, cx + 0.12 * D, cy + 0.3 * D);
     const ring = Math.min(
       meanGray(ctx, note.L + 0.05 * D, cy - 0.12 * D, note.L + 0.25 * D, cy + 0.12 * D),
       meanGray(ctx, note.R - 0.25 * D, cy - 0.12 * D, note.R - 0.05 * D, cy + 0.12 * D));
-    return mid - ring;
+    // A hole is darker again further out (the rim). Shading on a solid
+    // head in a photo only gets lighter toward the edge.
+    const rimUp = meanGray(ctx, cx - 0.12 * D, cy - 0.52 * D, cx + 0.12 * D, cy - 0.4 * D);
+    const rimDown = meanGray(ctx, cx - 0.12 * D, cy + 0.4 * D, cx + 0.12 * D, cy + 0.52 * D);
+    const score = Math.max(up > rimUp - 12 ? up - ring : 0, down > rimDown - 12 ? down - ring : 0);
+    dbg('hollowness', Math.round(cx), note.k, 'up', up.toFixed(0), 'down', down.toFixed(0), 'ring', ring.toFixed(0), 'rim', rimUp.toFixed(0), rimDown.toFixed(0));
+    return score;
   }
 
   function readDuration(ctx, staff, note) {
@@ -1125,14 +1361,17 @@
     if (v.length === 1) {
       const vx = (v[0].x0 + v[0].x1) / 2;
       const rel = (vx - c.minX) / c.w;
-      if (rel < 0.4 && wD < 1.25 && hD < 3.3) {
+      // A flat's stem runs (nearly) its full height; a slanted quarter
+      // rest in a photo can show a shorter straight piece.
+      if (rel < 0.4 && wD < 1.25 && hD < 3.3 && v[0].bottom - v[0].top + 1 >= 0.8 * c.h) {
         const lower = f.region(0.35, 0.6, 1, 1);
         const upper = f.region(0.35, 0, 1, 0.4);
         if (lower > upper + 0.1) return { type: 'flat', anchor: c.maxY - 0.5 * D };
       }
       return null;
     }
-    if (v.length === 2) {
+    // Two separate strokes (not one slanted stroke split in two).
+    if (v.length === 2 && v[1].x0 - v[0].x1 >= Math.max(3, 0.12 * D)) {
       const topRight = f.region(0.55, 0, 1, 0.18);
       const bottomLeft = f.region(0, 0.82, 0.45, 1);
       const topLeft = f.region(0, 0, 0.45, 0.18);
@@ -1299,9 +1538,11 @@
 
   // ---------- barlines and rests ----------
 
-  function findBarlines(ctx, staff, headerEnd) {
+  function findBarlines(ctx, staff, headerEnd, heads = []) {
     const { comps, D } = ctx;
     const bars = [];
+    const nearTopFor = (y, x) => Math.abs(y - posY(staff, x, 0)) <= 0.6 * D || (ctx.staves || []).some(o => o !== staff && Math.abs(y - posY(o, x, 0)) <= 0.6 * D && y < posY(staff, x, 0));
+    const nearBottomFor = (y, x) => Math.abs(y - posY(staff, x, 8)) <= 0.6 * D || (ctx.staves || []).some(o => o !== staff && Math.abs(y - posY(o, x, 8)) <= 0.6 * D && y > posY(staff, x, 8));
     for (let i = 1; i < comps.length; i++) {
       const c = comps[i];
       if (c.role && c.role !== 'barline') continue;
@@ -1323,6 +1564,72 @@
       if (!solid) continue;
       c.role = 'barline';
       bars.push(c.cx);
+    }
+    // In a photo a barline may lean or bend a little, or touch a slur or a
+    // head, so it is not always one straight component. Trace thin vertical
+    // strokes column by column as well.
+    const { bin, w } = ctx;
+    const ink = (x, y) => x >= 0 && x < w && y >= 0 && y < ctx.h && bin[y * w + x];
+    const trace = (x, y, dir) => {
+      let cx = x, cy = y, gap = 0;
+      for (;;) {
+        const ny = cy + dir;
+        if (ink(cx, ny)) { cy = ny; gap = 0; continue; }
+        if (ink(cx - 1, ny)) { cx--; cy = ny; gap = 0; continue; }
+        if (ink(cx + 1, ny)) { cx++; cy = ny; gap = 0; continue; }
+        if (gap < 2 && (ink(cx, ny + dir) || ink(cx, ny + 2 * dir))) { cy = ny; gap++; continue; }
+        return { y: cy, x: cx };
+      }
+    };
+    const runWidth = (x, y) => {
+      let a = x, b = x;
+      while (ink(a - 1, y) && x - a < 2 * D) a--;
+      while (ink(b + 1, y) && b - x < 2 * D) b++;
+      return b - a + 1;
+    };
+    const cols = [];
+    for (let x = Math.round(headerEnd + 0.5 * D); x <= Math.min(w - 2, staff.right + 0.5 * D); x++) {
+      const ym = Math.round(posY(staff, x, 4));
+      if (!ink(x, ym)) continue;
+      const up = trace(x, ym, -1), down = trace(x, ym, 1);
+      if (!nearTopFor(up.y, x) || !nearBottomFor(down.y, x)) continue;
+      // Straight: a flag or a slur curves.
+      if (Math.abs(up.x - x) > 0.2 * D || Math.abs(down.x - x) > 0.2 * D) continue;
+      let straight = true;
+      for (let k = 1; k <= 7 && straight; k += 2) {
+        const yy = Math.round(posY(staff, x, k));
+        const lx = Math.round(up.x + (down.x - up.x) * (yy - up.y) / Math.max(1, down.y - up.y));
+        if (!ink(lx, yy) && !ink(lx - 1, yy) && !ink(lx + 1, yy)) straight = false;
+      }
+      if (!straight) continue;
+      // Thin all along (skip the rows of staff lines).
+      let thin = 0, all = 0;
+      for (let k = 1; k <= 7; k += 2) {
+        const yy = Math.round(posY(staff, x, k));
+        all++;
+        if (runWidth(x, yy) <= 0.5 * D) thin++;
+      }
+      if (thin < all) continue;
+      // Not a stem of one of this staff's notes.
+      const stem = heads.some(hd => x >= hd.L - 0.3 * D && x <= hd.R + 0.3 * D && hd.y > up.y - 0.8 * D && hd.y < down.y + 0.8 * D);
+      if (stem) continue;
+      // Nor a flag or stem joined to a notehead.
+      let joined = false;
+      for (let k = 1; k <= 7 && !joined; k += 2) {
+        const yy = Math.round(posY(staff, x, k));
+        for (let dx = -1; dx <= 1 && !joined; dx++) {
+          const id = ctx.labels[yy * w + x + dx];
+          if (id && comps[id].role === 'note') joined = true;
+        }
+      }
+      if (joined) continue;
+      cols.push(x);
+    }
+    for (let i = 0; i < cols.length;) {
+      let j = i;
+      while (j + 1 < cols.length && cols[j + 1] - cols[j] <= 2) j++;
+      if (cols[j] - cols[i] <= 0.6 * D) bars.push((cols[i] + cols[j]) / 2);
+      i = j + 1;
     }
     bars.sort((a, b) => a - b);
     const merged = [];
@@ -1356,7 +1663,9 @@
         const blobs = countLeftBlobs(ctx, c);
         const shape = restShape(ctx, c);
         dbg('rest?', Math.round(c.cx), 'h', hD.toFixed(2), 'w', wD.toFixed(2), 'fill', fillRatio.toFixed(2), 'blobs', blobs, 'bottomInk', shape.bottomInk.toFixed(2), 'resid', shape.residual.toFixed(2));
-        if (shape.bottomInk < 0.32 && shape.residual < 0.1) {
+        // A flag rest has a round blob on its head; a slur end or a
+        // stray thin stroke does not.
+        if (shape.bottomInk < 0.32 && shape.residual < 0.1 && blobs >= 1) {
           const flags = Math.max(1, Math.min(3, Math.max(blobs, hD < 2.25 ? 1 : hD < 3.3 ? 2 : 3)));
           rest = { beats: 1 / Math.pow(2, flags), base: ['eighth', '16th', '32nd'][flags - 1] };
         } else if (hD >= 2.1) {

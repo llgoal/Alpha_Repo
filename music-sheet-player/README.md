@@ -20,7 +20,8 @@ Then open <http://127.0.0.1:8787/> and press **Melody demo** or **Piano demo**, 
 - Key signatures, accidentals (sharp, flat, natural) with bar-long carry.
 - Whole, half, quarter, eighth, sixteenth and thirty-second notes, single and double dots, beams and flags.
 - Whole/half/quarter/eighth/sixteenth rests, barlines, simple chords on one stem.
-- Ledger lines above and below the staff, slightly rotated photos, uneven lighting.
+- Ledger lines above and below the staff, slightly rotated photos, uneven lighting, and phone photos of a book page whose lines bend toward the spine or the edge.
+- Chords with heads stacked in thirds (e.g. G–B–D in the left hand).
 
 Not yet: handwritten music, multiple voices on one staff, ties, triplets, repeats and dynamics. The time signature is detected but playback follows the written note values.
 
@@ -28,11 +29,12 @@ Accuracy on the test set (rendered with Verovio in four music fonts), as the sha
 
 | Set | Symbols | Accuracy |
 | --- | --- | --- |
-| Single-line scores, clean | 566 | 99.1% |
+| Single-line scores, clean | 566 | 99.3% |
 | Single-line scores, blurred / noisy / rotated / photo-like | 915 | 98.7% |
 | Piano (both hands), clean | 409 | 99.3% |
 | Piano (both hands), blurred / noisy / rotated / photo-like | 925 | 97.0% |
 | A user's piano screenshot (Twinkle with Alberti bass) and 4 degraded copies | 440 | 99.3% |
+| A phone photo of a printed piano book page (curved page, 5 systems, slurs, fingerings, pencil marks) | 185 | 97.8% |
 
 On every piano test image the two staves were paired into the right systems.
 
@@ -46,7 +48,7 @@ On every piano test image the two staves were paired into the right systems.
 
 ## How recognition works
 
-Normalize lighting and binarize; measure staff line thickness and spacing from run lengths; rescale so a staff space is about 20 px; deskew; find five-line staves; erase staff and ledger lines. Noteheads are found at the half-space positions where they can sit (solid cores for filled heads, enclosed holes for hollow ones), then stems, beams, flags, dots and accidentals are attached by measuring ink around each head. The header gives clef, key and time signature; rests are classified by shape. All thresholds are in staff spaces, so the scale of the image does not matter.
+Normalize lighting and binarize; measure staff line thickness and spacing from run lengths; rescale so a staff space is about 20 px; deskew; find five-line staves in vertical strips (trying a few slopes in each, so curved lines of a photographed page are followed), link them across the page and trace each line; erase staff and ledger lines. Noteheads are found at the half-space positions where they can sit (solid cores for filled heads, enclosed holes for hollow ones), then stems, beams, flags, dots and accidentals are attached by measuring ink around each head. The header gives clef, key and time signature; rests are classified by shape. All thresholds are in staff spaces, so the scale of the image does not matter.
 
 ## Tests
 
