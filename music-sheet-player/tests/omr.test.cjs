@@ -95,3 +95,39 @@ test('note names', () => {
   assert.strictEqual(OMR.noteName(66), 'F#4');
   assert.strictEqual(OMR.noteName(70), 'Bb4');
 });
+
+// Piano music: a treble and a bass staff joined by a brace. Each fixture
+// lists the notes of each hand ("midi+midi:beats" for chords).
+const pianoDir = path.join(__dirname, 'fixtures-piano');
+const chordToken = e => (e.type === 'note' ? e.pitches.map(p => p.midi).sort((a, b) => a - b).join('+') + ':' + e.beats : 'R:' + e.beats);
+for (const file of fs.readdirSync(pianoDir).filter(f => f.endsWith('.json')).sort()) {
+  const name = file.replace(/\.json$/, '');
+  test(`reads both hands of ${name}`, () => {
+    const { hands } = JSON.parse(fs.readFileSync(path.join(pianoDir, file), 'utf8'));
+    const img = readPng(path.join(pianoDir, name + '.png'));
+    const res = OMR.recognize(img.rgba, img.width, img.height);
+    assert.ok(res.systems.length > 0 && res.systems.every(s => s.staves.length === 2), 'staves paired into piano systems');
+    const got = { right: [], left: [] };
+    for (const e of res.events) got[e.hand].push(chordToken(e));
+    assert.deepStrictEqual(got.right, hands.rh);
+    assert.deepStrictEqual(got.left, hands.lh);
+    // The hands stay in step: each bar starts at the same beat in both.
+    for (const sys of res.systems) {
+      const starts = sys.staves.map(idx => {
+        const m = new Map();
+        for (const e of res.events) if (e.staff === idx && !m.has(e.measure)) m.set(e.measure, e.start);
+        return [...m.values()];
+      });
+      assert.deepStrictEqual(starts[0], starts[1]);
+    }
+  });
+}
+
+test('single-line music is not paired into piano systems', () => {
+  const img = readPng(path.join(__dirname, '..', 'demo.png'));
+  const res = OMR.recognize(img.rgba, img.width, img.height);
+  assert.ok(res.systems.every(s => s.staves.length === 1));
+  // Lines play one after another.
+  let prev = -1;
+  for (const e of res.events) { assert.ok(e.start >= prev); prev = e.start; }
+});

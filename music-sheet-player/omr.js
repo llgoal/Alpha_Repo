@@ -342,15 +342,23 @@
     for (const staff of staves) removeStaffLines(sym, bin, w, h, staff, D, T);
     const ii = integral(sym, w, h);
     const { labels, comps } = labelComponents(sym, w, h);
-    const ctx = { bin, sym, ii, labels, comps, w, h, D, T };
+    const ctx = { bin, sym, ii, labels, comps, w, h, D, T, staves };
     if (options.debug) result.debug = { sym, bin, w, h };
 
     let previousClef = options.clef || 'treble';
     for (let s = 0; s < staves.length; s++) {
       const staff = staves[s];
       staff.index = s;
-      const heads = findHeads(ctx, staff);
-      for (const note of heads) attachStem(ctx, staff, note);
+      // A head belongs to the nearest staff: notes hanging below the right
+      // hand's staff must not be read again by the left hand's staff.
+      const prev = staves[s - 1], next = staves[s + 1];
+      const heads = findHeads(ctx, staff).filter(hd => {
+        const xi = Math.max(0, Math.min(w - 1, Math.round(hd.x)));
+        if (prev && hd.y < (prev.lineY[4][xi] + staff.lineY[0][xi]) / 2) return false;
+        if (next && hd.y > (staff.lineY[4][xi] + next.lineY[0][xi]) / 2) return false;
+        return true;
+      });
+      for (const note of heads) attachStem(ctx, staff, note, heads);
       dropStemTipBlobs(ctx, heads);
       const header = readHeader(ctx, staff, heads.filter(n => n.valid), previousClef, options);
       previousClef = header.clef;
@@ -373,6 +381,8 @@
       result.events.push(...assembleStaff(ctx, staff, valid, rests, bars));
     }
     fillWholeMeasureRests(result.events);
+    result.systems = findSystems(ctx, staves, result.staves);
+    computeTimeline(result);
     // Map coordinates back to the input image.
     result.toImage = (x, y) => {
       const cx = w / 2, cy = h / 2;
@@ -449,16 +459,24 @@
     }
     dbg('lines', lines.map(l => l.y.toFixed(1) + '/' + (l.bottom - l.top + 1)).join(' '), 'D', D.toFixed(2), 'T', T);
     const staves = [];
-    for (let i = 0; i + 4 < lines.length;) {
+    // Score a run of 5 candidate lines: even spacing and line-like thickness.
+    // (A horizontal beam just above a staff can pass for an extra line.)
+    const groupScore = i => {
+      if (i + 4 >= lines.length) return Infinity;
       const group = lines.slice(i, i + 5);
       const gaps = group.slice(1).map((l, k) => l.y - group[k].y);
-      const ok = gaps.every(g => g > D * 0.7 && g < D * 1.35) && Math.max(...gaps) / Math.min(...gaps) < 1.4;
-      if (ok) {
-        staves.push({ lines: group.map(l => l.y) });
-        i += 5;
-      } else {
-        i++;
-      }
+      if (!gaps.every(g => g > D * 0.7 && g < D * 1.35)) return Infinity;
+      const ratio = Math.max(...gaps) / Math.min(...gaps);
+      if (ratio >= 1.4) return Infinity;
+      const thick = group.reduce((a, l) => a + Math.max(0, (l.bottom - l.top + 1) - (T + 1)) / T, 0);
+      return ratio + 0.15 * thick;
+    };
+    for (let i = 0; i + 4 < lines.length;) {
+      const here = groupScore(i);
+      if (here === Infinity) { i++; continue; }
+      if (groupScore(i + 1) < here - 0.05) { i++; continue; }
+      staves.push({ lines: lines.slice(i, i + 5).map(l => l.y) });
+      i += 5;
     }
     for (const staff of staves) {
       // Horizontal extent: columns where at least 4 of the 5 lines are inked.
@@ -704,20 +722,47 @@
       }
       return hits >= RAYS - 1;
     };
-    for (let k = kMin; k <= kMax; k++) {
-      let runStart = -1;
-      for (let x = staff.left; x <= staff.right + 1; x++) {
-        let ok = false;
-        if (x <= staff.right) {
-          const y = posY(staff, x, k);
-          ok = (!px(ctx, x, y) || thinHorizontal(ctx, x, y)) && enclosed(x, y);
-        }
-        if (ok && runStart < 0) runStart = x;
-        if (!ok && runStart >= 0) {
-          const cx = Math.round((runStart + x - 1) / 2);
-          const cand = measureHollowHead(ctx, staff, cx, k);
-          if (cand) out.push(cand);
-          runStart = -1;
+    // A ring that exactly fills a staff space lost its top and bottom edges
+    // with the staff lines. Accept it when short crescents close it left and
+    // right and the (original) staff lines close it above and below.
+    const crescent = (x, y, dir) => {
+      for (let t = Math.round(0.12 * D); t <= 0.8 * D; t++) {
+        const xx = Math.round(x + dir * t);
+        if (!px(ctx, xx, y)) continue;
+        if (t > 0.75 * D) return false;
+        const c = ctx.comps[ctx.labels[Math.round(y) * w + xx]];
+        return !!c && c.h >= 0.45 * D && c.h <= 1.3 * D && c.w <= 1.0 * D;
+      }
+      return false;
+    };
+    const lineAt = (x, y, dir) => {
+      for (let t = 1; t <= 0.7 * D; t++) if (pxBin(ctx, x, y + dir * t)) return true;
+      return false;
+    };
+    const ringInSpace = (x, y) => !px(ctx, x, y) && crescent(x, y, -1) && crescent(x, y, 1) && lineAt(x, y, -1) && lineAt(x, y, 1);
+    // Pass 1: enclosed holes. Pass 2: rings in a space, only where pass 1
+    // found nothing (they would otherwise shift the centre of good runs).
+    for (const pass of [1, 2]) {
+      const before = out.length;
+      for (let k = kMin; k <= kMax; k++) {
+        if (pass === 2 && !(k % 2 !== 0 && k >= 1 && k <= 7)) continue;
+        let runStart = -1;
+        for (let x = staff.left; x <= staff.right + 1; x++) {
+          let ok = false;
+          if (x <= staff.right) {
+            const y = posY(staff, x, k);
+            ok = pass === 1
+              ? (!px(ctx, x, y) || thinHorizontal(ctx, x, y)) && enclosed(x, y)
+              : ringInSpace(x, y);
+          }
+          if (ok && runStart < 0) runStart = x;
+          if (!ok && runStart >= 0) {
+            const cx = Math.round((runStart + x - 1) / 2);
+            runStart = -1;
+            if (pass === 2 && out.slice(0, before).some(o => Math.abs(o.x - cx) < 1.2 * D && Math.abs(o.k - k) <= 2)) continue;
+            const cand = measureHollowHead(ctx, staff, cx, k);
+            if (cand) out.push(cand);
+          }
         }
       }
     }
@@ -821,7 +866,7 @@
     return { length: best, x: bestX };
   }
 
-  function attachStem(ctx, staff, note) {
+  function attachStem(ctx, staff, note, heads = []) {
     const { D } = ctx;
     const maxLen = 9 * D;
     const upRight = verticalReach(ctx, note.R - 0.4 * D, note.R + 0.15 * D, note.y, -1, maxLen);
@@ -833,10 +878,16 @@
     note.valid = false;
     dbg('stem', Math.round(note.x), note.k, note.filled ? 'filled' : 'hollow', 'upR', (upRight.length / D).toFixed(2), 'downL', (downLeft.length / D).toFixed(2), 'upL', (upLeft.length / D).toFixed(2), 'downR', (downRight.length / D).toFixed(2), 'W', ((note.R - note.L) / D).toFixed(2));
     const side = 1.35 * D;
-    if (upRight.length >= stemMin && upRight.length >= downLeft.length && upLeft.length < Math.max(side, upRight.length * 0.5) && downRight.length < side) {
+    // In a chord the stem runs on past this head to the next one: a reach
+    // that ends at another head on the same stem side is not a stray line.
+    const chordReach = (reach, dir) => reach.length >= side && heads.some(o => o !== note &&
+      Math.abs(o.x - note.x) < 0.6 * D && Math.abs(o.y - (note.y + dir * reach.length)) < 1.0 * D && (o.y - note.y) * dir > 0.8 * D);
+    const upLeftOk = upLeft.length < side || chordReach(upLeft, -1);
+    const downRightOk = downRight.length < side || chordReach(downRight, 1);
+    if (upRight.length >= stemMin && upRight.length >= downLeft.length && (upLeft.length < Math.max(side, upRight.length * 0.5)) && downRightOk) {
       note.stem = { dir: -1, x: upRight.x, tip: note.y - upRight.length, length: upRight.length };
       note.valid = true;
-    } else if (downLeft.length >= stemMin && upLeft.length < side && upRight.length < side) {
+    } else if (downLeft.length >= stemMin && upLeftOk && upRight.length < side) {
       note.stem = { dir: 1, x: downLeft.x, tip: note.y + downLeft.length, length: downLeft.length };
       note.valid = true;
     } else if (!note.filled && Math.max(upRight.length, downLeft.length, upLeft.length, downRight.length) < 1.2 * D && note.R - note.L >= 1.2 * D) {
@@ -1058,14 +1109,24 @@
     }
     near.sort((a, b) => a.minX - b.minX);
     let x = staff.left;
-    // Skip a system barline / bracket at the very start.
+    // Skip a brace, bracket or system barline at the very start: they are
+    // narrow and reach well beyond this staff (into the other hand's staff).
     let idx = 0;
-    while (idx < near.length && near[idx].minX < staff.left + 0.8 * D && near[idx].w < 0.8 * D) { near[idx].role = 'barline'; x = near[idx].maxX; idx++; }
+    for (const c of near) {
+      if (c.minX > x + 1.2 * D) break;
+      const systemMark = c.h > 5.5 * D && c.w < 1.8 * D;
+      const startLine = c.minX < staff.left + 0.8 * D && c.w < 0.8 * D;
+      if (!systemMark && !startLine) continue;
+      c.role = 'barline';
+      x = Math.max(x, c.maxX);
+    }
+    while (idx < near.length && near[idx].role === 'barline') idx++;
     // Clef: union of components that start within ~3.5 spaces of the staff start.
     let clefBox = null;
     const clefParts = [];
     for (let i = idx; i < near.length; i++) {
       const c = near[i];
+      if (c.role === 'barline' || c.maxX <= x) continue;
       if (c.minX > x + 3.5 * D) break;
       if (c.area < 0.05 * D * D || c.w > 4.5 * D) continue;
       if (!clefBox) {
@@ -1128,7 +1189,10 @@
     // Time signature: stacked digits (or a C) right after the key.
     let time = null;
     const hasHead = c => heads.some(hd => hd.stem && hd.x > c.minX - 0.2 * D && hd.x < c.maxX + 0.2 * D && hd.y > c.minY && hd.y < c.maxY);
-    const cand = near.filter(c => !c.role && c.minX > end - 0.1 * D && c.minX < end + 2.5 * D && c.area > 0.1 * D * D && !hasHead(c));
+    // Two digits merged into one staff-high blob can look like a stemmed
+    // head (the 4's stroke), so they skip the head guard.
+    const mergedDigits = c => Math.abs(c.minY - top) < 0.35 * D && Math.abs(c.maxY - bottom) < 0.35 * D && c.w > 0.8 * D && c.w < 2.6 * D && c.area < 0.75 * c.w * c.h;
+    const cand = near.filter(c => !c.role && c.minX > end - 0.1 * D && c.minX < end + 2.5 * D && c.area > 0.1 * D * D && (!hasHead(c) || (mergedDigits(c) && !heads.some(hd => hd.filled && hd.x > c.minX && hd.x < c.maxX && hd.y > c.minY && hd.y < c.maxY))));
     dbg('header end', Math.round(end), 'cands', cand.map(c => [c.minX, c.minY, c.maxX, c.maxY, c.role].join(',')).join(' | '), 'top', Math.round(top), 'bottom', Math.round(bottom));
     const upperHalf = cand.filter(c => c.minY > top - 0.6 * D && c.maxY < top + 2.4 * D && c.h > 1.2 * D);
     const lowerHalf = cand.filter(c => c.minY > top + 1.6 * D && c.maxY < bottom + 0.6 * D && c.h > 1.2 * D);
@@ -1168,7 +1232,11 @@
       if (c.w > 0.9 * D) continue;
       const top = posY(staff, c.cx, 0), bottom = posY(staff, c.cx, 8);
       if (c.h > 3 * D) dbg('bar?', c.minX, c.minY, c.maxX, c.maxY, 'top', Math.round(top), 'bottom', Math.round(bottom), 'fill', (c.area / (c.w * c.h)).toFixed(2), c.role);
-      if (Math.abs(c.minY - top) > 0.6 * D || Math.abs(c.maxY - bottom) > 0.6 * D) continue;
+      // A barline spans this staff; in a grand staff it may run on through
+      // the other staff of the system, ending on that staff's outer line.
+      const nearTop = y => Math.abs(y - top) <= 0.6 * D || (ctx.staves || []).some(o => o !== staff && Math.abs(y - posY(o, c.cx, 0)) <= 0.6 * D && y < top);
+      const nearBottom = y => Math.abs(y - bottom) <= 0.6 * D || (ctx.staves || []).some(o => o !== staff && Math.abs(y - posY(o, c.cx, 8)) <= 0.6 * D && y > bottom);
+      if (!nearTop(c.minY) || !nearBottom(c.maxY)) continue;
       let solid = false;
       for (let x = c.minX; x <= c.maxX && !solid; x++) {
         let n = 0;
@@ -1291,6 +1359,86 @@
     for (const [len, n] of lengths) if (n > bestN || (n === bestN && len > best)) { best = len; bestN = n; }
     for (const list of measures.values()) {
       if (list.length === 1 && list[0].wholeRest) list[0].beats = best;
+    }
+  }
+
+  // ---------- systems (grand staff) ----------
+
+  // Staves joined by a brace, bracket or system barline at their left edge
+  // are played together (piano: right hand above, left hand below). Without
+  // a visible connector, a page that alternates treble and bass staves is
+  // read as piano music too.
+  function findSystems(ctx, staves, described) {
+    const { comps, D } = ctx;
+    const n = staves.length;
+    const top = st => posY(st, st.left, 0), bottom = st => posY(st, st.left, 8);
+    const joined = new Array(Math.max(0, n - 1)).fill(false);
+    for (let i = 0; i + 1 < n; i++) {
+      const a = staves[i], b = staves[i + 1];
+      const left = Math.min(a.left, b.left);
+      for (let j = 1; j < comps.length && !joined[i]; j++) {
+        const c = comps[j];
+        if (c.minX > left + 2 * D || c.maxX < left - 3 * D) continue;
+        if (c.w > 2.5 * D) continue;
+        if (c.minY <= top(a) + 0.6 * D && c.maxY >= bottom(b) - 0.6 * D) joined[i] = true;
+      }
+    }
+    if (!joined.some(Boolean) && n >= 2 && n % 2 === 0) {
+      const alternating = described.every((st, i) => st.clef === (i % 2 ? 'bass' : 'treble'));
+      if (alternating) for (let i = 0; i + 1 < n; i += 2) joined[i] = true;
+    }
+    const systems = [];
+    for (let i = 0; i < n; i++) {
+      if (i > 0 && joined[i - 1]) systems[systems.length - 1].staves.push(i);
+      else systems.push({ staves: [i] });
+    }
+    systems.forEach((sys, si) => sys.staves.forEach((idx, part) => {
+      described[idx].system = si;
+      described[idx].part = part;
+      described[idx].hand = sys.staves.length === 2 ? (part === 0 ? 'right' : 'left') : null;
+    }));
+    return systems;
+  }
+
+  // Gives every event a start time in beats. Systems follow one another;
+  // the staves of one system play at the same time, kept in step bar by bar
+  // when they have the same number of bars.
+  function computeTimeline(result) {
+    let t = 0;
+    for (const sys of result.systems) {
+      const perStaff = sys.staves.map(idx => result.events.filter(e => e.staff === idx));
+      // Bar by bar when the staves show the same barlines (a bar one hand
+      // leaves empty, or a note we missed, then cannot shift the other hand).
+      const barCounts = sys.staves.map(idx => (result.staves[idx].bars || []).length);
+      const sameBars = barCounts.every(n => n === barCounts[0]);
+      if (sys.staves.length > 1 && sameBars) {
+        const ids = [...new Set(perStaff.flat().map(e => e.measure))].sort((a, b) => a - b);
+        for (const m of ids) {
+          let len = 0;
+          const lists = perStaff.map(evs => evs.filter(e => e.measure === m));
+          for (const list of lists) len = Math.max(len, list.reduce((a, e) => a + e.beats, 0));
+          for (const list of lists) {
+            let x = t;
+            for (const e of list) { e.start = x; x += e.beats; }
+          }
+          t += len;
+        }
+      } else {
+        let len = 0;
+        for (const evs of perStaff) {
+          let x = t;
+          for (const e of evs) { e.start = x; x += e.beats; }
+          len = Math.max(len, x - t);
+        }
+        t += len;
+      }
+      sys.start = sys.staves.length ? Math.min(...perStaff.flat().map(e => e.start).concat([t])) : t;
+      sys.end = t;
+    }
+    result.totalBeats = t;
+    for (const e of result.events) {
+      const st = result.staves[e.staff];
+      e.hand = st ? st.hand : null;
     }
   }
 

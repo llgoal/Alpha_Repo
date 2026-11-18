@@ -10,28 +10,38 @@ From this directory:
 python3 -m http.server 8787
 ```
 
-Then open <http://127.0.0.1:8787/> and press **Demo score**, or upload a PNG/JPG/PDF, take a photo, drag an image in, or paste a screenshot. `mobile.html` redirects to the same page.
+Then open <http://127.0.0.1:8787/> and press **Melody demo** or **Piano demo**, or upload a PNG/JPG/PDF, take a photo, drag an image in, or paste a screenshot. `mobile.html` redirects to the same page.
 
 ## What v1 reads
 
-- One or more single-voice staves, printed (engraved) notation.
+- One or more staves of printed (engraved) notation, one voice per staff.
+- Piano music: a treble and a bass staff joined by a brace (or system barline) are read as right and left hand and played together, kept in step bar by bar. A menu plays both hands or one hand alone.
 - Treble and bass clef (alto/tenor are detected but rarely tested); a clef menu overrides detection.
 - Key signatures, accidentals (sharp, flat, natural) with bar-long carry.
 - Whole, half, quarter, eighth, sixteenth and thirty-second notes, single and double dots, beams and flags.
 - Whole/half/quarter/eighth/sixteenth rests, barlines, simple chords on one stem.
 - Ledger lines above and below the staff, slightly rotated photos, uneven lighting.
 
-Not yet: handwritten music, grand-staff piano scores played as two hands, multiple voices on one staff, ties, triplets, repeats and dynamics. The time signature is detected but playback follows the written note values.
+Not yet: handwritten music, multiple voices on one staff, ties, triplets, repeats and dynamics. The time signature is detected but playback follows the written note values.
 
-Accuracy on the test set (rendered with Verovio in four music fonts): 98.8% of symbols on clean images (566 symbols) and 97.6% on blurred, noisy, rotated and photo-like copies (915 symbols).
+Accuracy on the test set (rendered with Verovio in four music fonts), as the share of notes and rests read with the right pitch and length:
+
+| Set | Symbols | Accuracy |
+| --- | --- | --- |
+| Single-line scores, clean | 566 | 98.9% |
+| Single-line scores, blurred / noisy / rotated / photo-like | 915 | 98.0% |
+| Piano (both hands), clean | 409 | 99.3% |
+| Piano (both hands), blurred / noisy / rotated / photo-like | 925 | 96.1% |
+
+On every piano test image the two staves were paired into the right systems.
 
 ## Files
 
 - `index.html` – the app UI, drawing, and playback scheduling.
-- `omr.js` – the recognizer. `OMR.recognize(rgbaOrGray, width, height, { clef })` returns staves (clef, key, lines, barlines) and events (`{ type: 'note', pitches, midi, name, beats }` or `{ type: 'rest', beats }`). Works in the browser and in Node.
+- `omr.js` – the recognizer. `OMR.recognize(rgbaOrGray, width, height, { clef })` returns staves (clef, key, lines, barlines) and events (`{ type: 'note', pitches, midi, name, beats, start, hand }` or `{ type: 'rest', beats, start, hand }`; `start` is in beats from the beginning and `hand` is `'right'`, `'left'` or `null`), and `systems` (which staves play together). Works in the browser and in Node.
 - `player.js` – Web Audio piano: `PianoPlayer.unlock()` (call inside a tap), `load(midis)`, `playNote(midi, when, seconds)`, `stopAll()`.
 - `piano-samples.js` – Salamander Grand Piano samples embedded as base64, so playback works offline and inside sandboxed previews.
-- `demo.png` – the demo score.
+- `demo.png`, `demo-piano.png` – the demo scores.
 
 ## How recognition works
 
@@ -45,7 +55,7 @@ With Node.js 18 or later, from the repository root:
 node --test music-sheet-player/tests/omr.test.cjs
 ```
 
-Each fixture in `tests/fixtures/` is a score image with its expected `midi:beats` sequence; the tests need no packages.
+Each fixture in `tests/fixtures/` is a score image with its expected `midi:beats` sequence, and `tests/fixtures-piano/` holds piano scores with the notes of each hand; the tests need no packages.
 
 ## Credits
 
