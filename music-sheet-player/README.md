@@ -28,10 +28,11 @@ Accuracy on the test set (rendered with Verovio in four music fonts), as the sha
 
 | Set | Symbols | Accuracy |
 | --- | --- | --- |
-| Single-line scores, clean | 566 | 98.9% |
-| Single-line scores, blurred / noisy / rotated / photo-like | 915 | 98.0% |
+| Single-line scores, clean | 566 | 99.1% |
+| Single-line scores, blurred / noisy / rotated / photo-like | 915 | 98.7% |
 | Piano (both hands), clean | 409 | 99.3% |
-| Piano (both hands), blurred / noisy / rotated / photo-like | 925 | 96.1% |
+| Piano (both hands), blurred / noisy / rotated / photo-like | 925 | 97.0% |
+| A user's piano screenshot (Twinkle with Alberti bass) and 4 degraded copies | 440 | 99.3% |
 
 On every piano test image the two staves were paired into the right systems.
 

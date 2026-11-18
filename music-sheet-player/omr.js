@@ -342,7 +342,7 @@
     for (const staff of staves) removeStaffLines(sym, bin, w, h, staff, D, T);
     const ii = integral(sym, w, h);
     const { labels, comps } = labelComponents(sym, w, h);
-    const ctx = { bin, sym, ii, labels, comps, w, h, D, T, staves };
+    const ctx = { gray, bin, sym, ii, labels, comps, w, h, D, T, staves };
     if (options.debug) result.debug = { sym, bin, w, h };
 
     let previousClef = options.clef || 'treble';
@@ -669,7 +669,25 @@
       if (!clash) kept.push(hd);
     }
     kept.sort((a, b) => a.x - b.x);
-    return kept;
+    // Above or below the staff a note needs its ledger lines; without them a
+    // "head" is a page edge, a shadow or text.
+    const ledgerAt = (hd, kk) => {
+      const y = Math.round(posY(staff, hd.x, kk));
+      for (let dy = -ctx.T - 1; dy <= ctx.T + 1; dy++) {
+        let run = 0, best = 0;
+        for (let x = Math.round(hd.L - 0.6 * D); x <= Math.round(hd.R + 0.6 * D); x++) {
+          run = pxBin(ctx, x, y + dy) ? run + 1 : 0;
+          best = Math.max(best, run);
+        }
+        if (best >= Math.min(1.3 * D, hd.R - hd.L + 0.4 * D)) return true;
+      }
+      return false;
+    };
+    return kept.filter(hd => {
+      for (let kk = -2; kk >= hd.k; kk -= 2) if (!ledgerAt(hd, kk)) return false;
+      for (let kk = 10; kk <= hd.k; kk += 2) if (!ledgerAt(hd, kk)) return false;
+      return true;
+    });
   }
 
   function measureFilledHead(ctx, staff, cx, k) {
@@ -761,7 +779,8 @@
             runStart = -1;
             if (pass === 2 && out.slice(0, before).some(o => Math.abs(o.x - cx) < 1.2 * D && Math.abs(o.k - k) <= 2)) continue;
             const cand = measureHollowHead(ctx, staff, cx, k);
-            if (cand) out.push(cand);
+            if (Array.isArray(cand)) out.push(...cand);
+            else if (cand) out.push(cand);
           }
         }
       }
@@ -834,11 +853,39 @@
       while (px(ctx, x, b + 1) && b - row < 4 * D) b++;
       return b - a + 1;
     };
-    if (vRun(Math.round(L + tl / 2)) > 1.5 * D && vRun(Math.round(R - tr / 2)) > 1.5 * D) return null;
+    // Both sides may run on when another hollow head is stacked right above
+    // or below (a third in a chord): its hole is a space away.
+    const holeAt = (xc, yy) => {
+      for (let dx = 0; dx <= 0.4 * D; dx++) {
+        for (const x0 of dx ? [xc - dx, xc + dx] : [xc]) {
+          if (px(ctx, x0, yy)) continue;
+          let l = 0, r = 0;
+          for (let t = 1; t <= 0.8 * D && (!l || !r); t++) {
+            if (!l && px(ctx, x0 - t, yy)) l = t;
+            if (!r && px(ctx, x0 + t, yy)) r = t;
+          }
+          if (!(l > 0 && r > 0 && l + r <= 1.1 * D)) continue;
+          let u = 0, d = 0;
+          for (let t = 1; t <= 0.75 * D && (!u || !d); t++) {
+            if (!u && (px(ctx, x0, yy - t) || pxBin(ctx, x0, yy - t))) u = t;
+            if (!d && (px(ctx, x0, yy + t) || pxBin(ctx, x0, yy + t))) d = t;
+          }
+          if (u > 0 && d > 0) return true;
+        }
+      }
+      return false;
+    };
+    if (vRun(Math.round(L + tl / 2)) > 1.5 * D && vRun(Math.round(R - tr / 2)) > 1.5 * D &&
+        !holeAt(cx, posY(staff, cx, k - 2)) && !holeAt(cx, posY(staff, cx, k + 2))) return null;
     // The head must be centred on this position: compare with its ink box.
     const centerErr = Math.abs((top + bottom) / 2 - y) / D;
     if (centerErr > 0.3) return null;
-    return { x: (L + R) / 2, y, k, L, R, filled: false, score: 0.9 - centerErr };
+    // A ring taller than one head is usually two stacked heads seen as one:
+    // let the single heads at the neighbouring positions win.
+    let tall = Math.max(0, H / D - 1.3) * 1.5;
+    // Centred on a line with a hole a space above and below: two heads.
+    if (k % 2 === 0 && H > 1.2 * D && holeAt(cx, posY(staff, cx, k - 1)) && holeAt(cx, posY(staff, cx, k + 1))) tall += 0.4;
+    return { x: (L + R) / 2, y, k, L, R, filled: false, score: 0.9 - centerErr - tall };
   }
 
   // Longest vertical ink run through rows near y, measured from y in one direction.
@@ -887,7 +934,7 @@
     if (upRight.length >= stemMin && upRight.length >= downLeft.length && (upLeft.length < Math.max(side, upRight.length * 0.5)) && downRightOk) {
       note.stem = { dir: -1, x: upRight.x, tip: note.y - upRight.length, length: upRight.length };
       note.valid = true;
-    } else if (downLeft.length >= stemMin && upLeftOk && upRight.length < side) {
+    } else if (downLeft.length >= stemMin && upLeftOk && (upRight.length < side || chordReach(upRight, -1))) {
       note.stem = { dir: 1, x: downLeft.x, tip: note.y + downLeft.length, length: downLeft.length };
       note.valid = true;
     } else if (!note.filled && Math.max(upRight.length, downLeft.length, upLeft.length, downRight.length) < 1.2 * D && note.R - note.L >= 1.2 * D) {
@@ -928,8 +975,34 @@
     return { runs, lengths };
   }
 
+  // Mean gray value in a box (0 = black).
+  function meanGray(ctx, x0, y0, x1, y1) {
+    let sum = 0, n = 0;
+    for (let y = Math.round(y0); y <= Math.round(y1); y++) for (let x = Math.round(x0); x <= Math.round(x1); x++) {
+      if (x < 0 || y < 0 || x >= ctx.w || y >= ctx.h) continue;
+      sum += ctx.gray[y * ctx.w + x]; n++;
+    }
+    return n ? sum / n : 255;
+  }
+
+  // Blur can fill the small hole of a half note. Its middle still stays
+  // lighter than the ring around it; a solid head is evenly dark.
+  function hollowness(ctx, note) {
+    const { D } = ctx;
+    const cx = note.x, cy = note.y;
+    // Sample just above and below the centre, clear of a line through it.
+    const mid = Math.max(
+      meanGray(ctx, cx - 0.12 * D, cy - 0.3 * D, cx + 0.12 * D, cy - 0.14 * D),
+      meanGray(ctx, cx - 0.12 * D, cy + 0.14 * D, cx + 0.12 * D, cy + 0.3 * D));
+    const ring = Math.min(
+      meanGray(ctx, note.L + 0.05 * D, cy - 0.12 * D, note.L + 0.25 * D, cy + 0.12 * D),
+      meanGray(ctx, note.R - 0.25 * D, cy - 0.12 * D, note.R - 0.05 * D, cy + 0.12 * D));
+    return mid - ring;
+  }
+
   function readDuration(ctx, staff, note) {
     const { D } = ctx;
+    if (note.filled && note.stem && hollowness(ctx, note) > 25) note.filled = false;
     if (!note.stem) { note.beats = 4; note.base = 'whole'; return; }
     if (!note.filled) { note.beats = 2; note.base = 'half'; return; }
     const s = note.stem;
@@ -1170,7 +1243,11 @@
     if (options.clef && options.clef !== 'auto') clef = options.clef;
     // Key signature: a run of sharps or flats, not attached to a following note.
     let keyType = null, keyCount = 0;
-    const headAt = (c, anchor) => heads.some(hd => hd.L > c.maxX - 0.1 * D && hd.L < c.maxX + 1.4 * D && Math.abs(hd.y - anchor) < 0.5 * D);
+    // A "hollow head" inside a staff-high glyph is a loop of a time
+    // signature digit, not a note that the accidental belongs to.
+    const inDigits = hd => !hd.filled && near.some(c => Math.abs(c.minY - top) < 0.35 * D && Math.abs(c.maxY - bottom) < 0.35 * D &&
+      c.w > 0.8 * D && c.w < 2.6 * D && hd.x > c.minX && hd.x < c.maxX);
+    const headAt = (c, anchor) => heads.some(hd => hd.L > c.maxX - 0.1 * D && hd.L < c.maxX + 1.4 * D && Math.abs(hd.y - anchor) < 0.5 * D && !inDigits(hd));
     for (const c of near) {
       if (c.role || c.minX <= end - 0.1 * D) continue;
       if (c.minX > end + 1.8 * D) break;
