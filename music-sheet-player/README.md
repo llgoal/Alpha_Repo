@@ -1,4 +1,4 @@
-# ScoreLens 识谱钢琴
+# ScoreLens Piano
 
 Take a photo of a short printed melody, read the notes, and play them back on a sampled grand piano. Everything runs in the browser; images are never uploaded.
 
@@ -10,7 +10,7 @@ From this directory:
 python3 -m http.server 8787
 ```
 
-Then open <http://127.0.0.1:8787/> and press **示例乐谱** (demo score), or upload a PNG/JPG/PDF, take a photo, drag an image in, or paste a screenshot. `mobile.html` redirects to the same page.
+Then open <http://127.0.0.1:8787/> and press **Demo score**, or upload a PNG/JPG/PDF, take a photo, drag an image in, or paste a screenshot. `mobile.html` redirects to the same page.
 
 ## What v1 reads
 

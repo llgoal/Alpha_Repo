@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="zh-CN">
-<title>ScoreLens 识谱钢琴</title>
+<html lang="en">
+<title>ScoreLens Piano</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta charset="utf-8">
@@ -111,41 +111,41 @@
 
 <div class="wrap">
   <header>
-    <h1>ScoreLens 识谱钢琴</h1>
-    <p>拍一段五线谱，识别音符，用真钢琴音色弹出来。</p>
+    <h1>ScoreLens Piano</h1>
+    <p>Snap a short piece of sheet music, read the notes, and hear it on a real grand piano.</p>
   </header>
 
   <div class="card toolbar">
     <label class="btn primary" for="fileInput">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>
-      上传乐谱
+      Upload score
     </label>
     <input id="fileInput" class="sr" type="file" accept="image/*,application/pdf">
     <label class="btn" for="cameraInput">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
-      拍照
+      Take photo
     </label>
     <input id="cameraInput" class="sr" type="file" accept="image/*" capture="environment">
-    <button class="btn" id="demoBtn" type="button">示例乐谱</button>
+    <button class="btn" id="demoBtn" type="button">Demo score</button>
     <span class="spacer"></span>
-    <label class="tempo">速度
+    <label class="tempo">Tempo
       <input id="tempo" type="range" min="40" max="200" step="2" value="96">
       <output id="tempoOut">♩ = 96</output>
     </label>
-    <select id="clefSel" aria-label="谱号">
-      <option value="">谱号：自动</option>
-      <option value="treble">高音谱号</option>
-      <option value="bass">低音谱号</option>
+    <select id="clefSel" aria-label="Clef">
+      <option value="">Clef: auto</option>
+      <option value="treble">Treble clef</option>
+      <option value="bass">Bass clef</option>
     </select>
     <button class="btn primary" id="playBtn" type="button" disabled>
       <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>
-      <span id="playLabel">播放</span>
+      <span id="playLabel">Play</span>
     </button>
   </div>
 
   <div class="card stage">
     <div class="drop" id="drop">
-      <div><strong>把乐谱图片拖到这里，或粘贴截图</strong>支持 JPG / PNG / PDF（第一页）。也可以先点「示例乐谱」试试。</div>
+      <div><strong>Drop a picture of sheet music here, or paste a screenshot</strong>JPG, PNG or PDF (first page). Or press “Demo score” to try it out.</div>
     </div>
     <div class="canvas-box" id="canvasBox" hidden><canvas id="canvas"></canvas></div>
     <div class="status" id="status" role="status"></div>
@@ -154,18 +154,18 @@
   <div id="resultArea" hidden>
     <div class="card facts" id="facts"></div>
     <div id="warnings"></div>
-    <h2>识别出的音符（点一下单独试听）</h2>
+    <h2>Recognized notes (tap one to hear it)</h2>
     <div class="notes" id="notes"></div>
   </div>
 
-  <h2>怎样拍得准</h2>
+  <h2>Tips for a good read</h2>
   <ul class="help">
-    <li>第一版识别印刷体单声部五线谱：高音或低音谱号、调号、拍号、全/二分/四分/八分/十六分音符、附点、临时记号、休止符、和弦。</li>
-    <li>正对纸面拍，五线谱尽量水平、占满画面，光线均匀，不要有手影。</li>
-    <li>暂不支持手写谱、钢琴大谱表的左右手同时演奏、连音线和三连音。</li>
+    <li>Version 1 reads printed, single-voice staves: treble or bass clef, key and time signatures, whole to sixteenth notes, dots, accidentals, rests and simple chords.</li>
+    <li>Shoot straight at the page with the staves level and filling the frame, in even light without shadows.</li>
+    <li>Not yet supported: handwritten music, two-hand piano (grand staff) playback, ties and triplets.</li>
   </ul>
 
-  <footer>钢琴音色：Salamander Grand Piano，作者 Alexander Holm，CC BY 3.0 许可。全部识别都在你的浏览器里完成，图片不会上传。</footer>
+  <footer>Piano sound: Salamander Grand Piano by Alexander Holm, CC BY 3.0. Recognition runs entirely in your browser; images are never uploaded.</footer>
 </div>
 
 <script src="piano-samples.js"></script>
@@ -179,7 +179,7 @@
   const g = canvas.getContext('2d');
   const statusEl = $('status');
   const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
-  const DUR_NAMES = { 4: '全', 3: '附点二分', 2: '二分', 1.5: '附点四分', 1: '四分', 0.75: '附点八分', 0.5: '八分', 0.375: '附点十六分', 0.25: '十六分', 0.125: '三十二分' };
+  const DUR_NAMES = { 4: 'whole', 3: 'dotted half', 2: 'half', 1.5: 'dotted quarter', 1: 'quarter', 0.75: 'dotted 8th', 0.5: '8th', 0.375: 'dotted 16th', 0.25: '16th', 0.125: '32nd' };
   const SOLFEGE = ['do', 'do♯', 're', 'mi♭', 'mi', 'fa', 'fa♯', 'sol', 'la♭', 'la', 'si♭', 'si'];
 
   let image = null;    // canvas holding the source image
@@ -197,7 +197,7 @@
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = src; s.onload = resolve; s.onerror = () => reject(new Error('无法加载 ' + src));
+      s.src = src; s.onload = resolve; s.onerror = () => reject(new Error('Could not load ' + src));
       document.head.appendChild(s);
     });
   }
@@ -235,7 +235,7 @@
         cg.drawImage(img, 0, 0, c.width, c.height);
         resolve(c);
       };
-      img.onerror = () => reject(new Error('这个文件打不开，请换一张 JPG 或 PNG 图片。'));
+      img.onerror = () => reject(new Error('This file could not be opened. Try a JPG or PNG image.'));
       img.src = src;
     });
   }
@@ -243,7 +243,7 @@
   async function openFile(file) {
     if (!file) return;
     stop();
-    setStatus('正在读取图片…');
+    setStatus('Reading image…');
     try {
       const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
       let c;
@@ -254,7 +254,7 @@
       }
       showImage(c);
     } catch (e) {
-      setStatus(e.message || '读取失败。', true);
+      setStatus(e.message || 'Could not read the file.', true);
     }
   }
 
@@ -275,7 +275,7 @@
     result = null;
     $('playBtn').disabled = true;
     $('resultArea').hidden = true;
-    setStatus('识别中…');
+    setStatus('Recognizing…');
     // Let the status paint before the (synchronous) recognizer runs.
     setTimeout(() => {
       const t0 = performance.now();
@@ -288,18 +288,18 @@
         if ($('clefSel').value) forceClef(res, $('clefSel').value);
       } catch (e) {
         console.error(e);
-        setStatus('识别时出错：' + e.message, true);
+        setStatus('Recognition failed: ' + e.message, true);
         return;
       }
       result = res;
       const ms = Math.round(performance.now() - t0);
       const notes = res.events.filter(e => e.type === 'note').length;
       if (!res.staves.length) {
-        setStatus('没有找到五线谱。请正对纸面重新拍一张，让五线谱水平、清晰、占满画面。', true);
+        setStatus('No staff found. Retake the photo straight on, with the staves level, sharp and filling the frame.', true);
       } else if (!notes) {
-        setStatus('找到了五线谱，但没有认出音符。试试拍得更近、更清晰一些。', true);
+        setStatus('Found a staff but no notes. Try a closer, sharper photo.', true);
       } else {
-        setStatus(`识别完成：${res.staves.length} 行谱，${notes} 个音符，用时 ${ms} 毫秒。`);
+        setStatus(`Done: ${res.staves.length} ${res.staves.length === 1 ? 'staff' : 'staves'}, ${notes} notes, in ${ms} ms.`);
       }
       $('playBtn').disabled = !notes;
       renderResult();
@@ -330,19 +330,19 @@
     }
   }
 
-  const CLEF_CN = { treble: '高音谱号', bass: '低音谱号', alto: '中音谱号', tenor: '次中音谱号' };
+  const CLEF_NAMES = { treble: 'Treble', bass: 'Bass', alto: 'Alto', tenor: 'Tenor' };
   const MAJOR_SHARP = ['C', 'G', 'D', 'A', 'E', 'B', 'F♯', 'C♯'];
   const MAJOR_FLAT = ['C', 'F', 'B♭', 'E♭', 'A♭', 'D♭', 'G♭', 'C♭'];
 
   function keyText(key) {
-    if (!key || !key.count) return 'C 大调 / a 小调（无升降号）';
+    if (!key || !key.count) return 'C major / A minor (no sharps or flats)';
     const n = key.count;
     const major = key.type === 'sharp' ? MAJOR_SHARP[n] : MAJOR_FLAT[n];
-    return `${major} 大调（${n} 个${key.type === 'sharp' ? '升号' : '降号'}）`;
+    return `${major} major (${n} ${key.type === 'sharp' ? 'sharp' : 'flat'}${n > 1 ? 's' : ''})`;
   }
 
   function durName(ev) {
-    return DUR_NAMES[ev.beats] || `${ev.beats} 拍`;
+    return DUR_NAMES[ev.beats] || `${ev.beats} beats`;
   }
 
   function renderResult() {
@@ -354,11 +354,11 @@
     const totalBeats = result.events.reduce((a, e) => a + e.beats, 0);
     const time = result.staves.map(s => s.time).find(Boolean);
     const facts = [
-      ['谱号', CLEF_CN[s0.clef] || s0.clef],
-      ['调号', keyText(s0.key)],
-      ['拍号', time === 'C' ? 'C（4/4 拍）' : time ? '已识别（按记谱时值播放）' : '未标出'],
-      ['音符', noteEvents.length + ' 个'],
-      ['总长', `${+totalBeats.toFixed(2)} 拍`]
+      ['Clef', CLEF_NAMES[s0.clef] || s0.clef],
+      ['Key', keyText(s0.key)],
+      ['Time', time === 'C' ? 'C (4/4)' : time ? 'Detected (plays written note values)' : 'Not marked'],
+      ['Notes', String(noteEvents.length)],
+      ['Length', `${+totalBeats.toFixed(2)} beats`]
     ];
     $('facts').innerHTML = facts.map(([k, v]) => `<div><span>${k}</span> <b>${v}</b></div>`).join('');
     $('warnings').innerHTML = (result.warnings || []).map(w => `<div class="warn">${escapeHtml(w)}</div>`).join('');
@@ -382,7 +382,7 @@
         chip.innerHTML = `${names}<small>${durName(ev)}</small>`;
         chip.title = ev.pitches.map(p => SOLFEGE[p.midi % 12]).join(' ');
       } else {
-        chip.innerHTML = `休止<small>${durName(ev)}</small>`;
+        chip.innerHTML = `Rest<small>${durName(ev)}</small>`;
       }
       chip.addEventListener('click', () => audition(i));
       box.appendChild(chip);
@@ -487,14 +487,14 @@
     try { ready = PianoPlayer.unlock(); } catch (e) { setStatus(e.message, true); return; }
     setPlaying(true);
     const request = playing; // stop() or a newer play() replaces this object
-    setStatus('正在准备钢琴音色…');
+    setStatus('Loading piano sound…');
     try {
       await ready;
       await PianoPlayer.load(midis);
     } catch (e) {
       if (playing !== request) return;
       setPlaying(false);
-      setStatus('钢琴音色加载失败：' + (e.message || e), true);
+      setStatus('Could not load the piano sound: ' + (e.message || e), true);
       return;
     }
     if (playing !== request) return; // stopped or restarted while loading
@@ -515,11 +515,11 @@
     playing.startAt = startAt;
     playing.end = startAt + t;
     playing.schedule = schedule;
-    setStatus(`正在播放（♩ = ${$('tempo').value}）`);
+    setStatus(`Playing (♩ = ${$('tempo').value})`);
     const tick = () => {
       if (playing !== request) return;
       const now = ctx.currentTime;
-      if (now >= playing.end + 0.2) { stop(); setStatus('播放完毕。'); return; }
+      if (now >= playing.end + 0.2) { stop(); setStatus('Finished.'); return; }
       const cur = schedule.find(s => now >= s.start && now < s.end);
       setCurrent(cur ? cur.i : -1);
       playing.raf = requestAnimationFrame(tick);
@@ -536,7 +536,7 @@
       const ready = PianoPlayer.unlock();
       await ready;
       await PianoPlayer.load(ev.pitches.map(p => p.midi));
-    } catch (e) { setStatus('钢琴音色加载失败：' + (e.message || e), true); return; }
+    } catch (e) { setStatus('Could not load the piano sound: ' + (e.message || e), true); return; }
     const ctx = PianoPlayer.context;
     const dur = Math.max(0.4, ev.beats * secondsPerBeat());
     for (const p of ev.pitches) PianoPlayer.playNote(p.midi, ctx.currentTime + 0.02, dur, 0.9 / Math.sqrt(ev.pitches.length));
@@ -546,7 +546,7 @@
 
   function setPlaying(on) {
     if (on) playing = playing || {};
-    $('playLabel').textContent = on ? '停止' : '播放';
+    $('playLabel').textContent = on ? 'Stop' : 'Play';
     $('playIcon').innerHTML = on ? '<rect x="6" y="6" width="12" height="12" rx="1.5"/>' : '<path d="M7 4.5v15l13-7.5z"/>';
   }
 
@@ -560,7 +560,7 @@
 
   // ---------- wiring ----------
 
-  $('playBtn').addEventListener('click', () => { if (playing) { stop(); setStatus('已停止。'); } else play(); });
+  $('playBtn').addEventListener('click', () => { if (playing) { stop(); setStatus('Stopped.'); } else play(); });
   $('tempo').addEventListener('input', () => { $('tempoOut').textContent = '♩ = ' + $('tempo').value; });
   $('tempo').addEventListener('change', () => { if (playing) { stop(); play(); } });
   $('clefSel').addEventListener('change', runRecognition);
@@ -568,9 +568,9 @@
   $('cameraInput').addEventListener('change', e => { openFile(e.target.files[0]); e.target.value = ''; });
   $('demoBtn').addEventListener('click', async () => {
     stop();
-    setStatus('正在打开示例乐谱…');
+    setStatus('Opening demo score…');
     try { showImage(await imageToCanvas('demo.png')); }
-    catch (e) { setStatus('示例乐谱加载失败。', true); }
+    catch (e) { setStatus('Could not load the demo score.', true); }
   });
 
   const stage = document.querySelector('.stage');
