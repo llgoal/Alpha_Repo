@@ -27,7 +27,7 @@ The default page adapts to phone, tablet, and desktop screens. Existing `mobile.
 - Edit recognized notes in a list or text box.
 - Play back using piano, violin, flute, guitar, marimba, or pure tone voices.
 - Tune threshold, tempo, clef, transpose, and overlay display.
-- Piano samples load from a CDN; if they take more than 6 seconds, playback starts with the built-in piano synth instead of staying silent.
+- The piano voice uses real Salamander Grand Piano recordings bundled in `piano-samples.js`, so it works offline and needs no CDN. If the samples cannot be decoded, playback falls back to the built-in piano synth.
 - On iPhone/iPad, playback unlocks audio during the Play tap so the ring/silent switch does not mute it.
 
 ## Tests
@@ -41,3 +41,7 @@ node --test tests/playback.test.cjs
 ## Limits
 
 This is a strong prototype, not a production OMR engine. It is best with clean single-staff melodies. Dense piano scores, handwritten notation, multiple voices, ties, accidentals, lyrics, chord symbols, and percussion notation need a deeper OMR model and MusicXML export/import layer.
+
+## Credits
+
+Piano samples: [Salamander Grand Piano V3](https://github.com/Tonejs/audio/tree/master/salamander) by Alexander Holm, licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Trimmed to 5 seconds and re-encoded as mono MP3.

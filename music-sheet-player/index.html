@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ScoreLens Studio</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
-  <script src="https://unpkg.com/soundfont-player@0.12.0/dist/soundfont-player.js"></script>
+  <script src="piano-samples.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     :root {
@@ -1028,7 +1028,6 @@
     const ctx = els.canvas.getContext('2d', { willReadFrequently: true });
     const demoCtx = els.demoCanvas.getContext('2d');
     const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    const SOUNDFONT_NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
     let sourceImage = null;
     let detected = { staffLines: [], notes: [] };
     let activeSynth = null;
@@ -1037,10 +1036,10 @@
     let playbackTimers = [];
     let playbackRequestId = 0;
     let activeAudioNodes = [];
-    let soundFontPiano = null;
-    let soundFontPianoPromise = null;
-    let soundFontPianoNotesKey = '';
-    let soundFontAvailable = true;
+    let pianoBuffers = new Map();
+    let pianoBuffersContext = null;
+    let pianoOutput = null;
+    let pianoSamplesAvailable = true;
     let playbackStartedAt = 0;
     let playbackDuration = 0;
     let cursorIndex = -1;
@@ -1066,11 +1065,6 @@
 
     function noteToFrequency(note) {
       return 440 * Math.pow(2, (noteToMidi(note) - 69) / 12);
-    }
-
-    function noteToSoundFontName(note) {
-      const midi = Math.max(21, Math.min(108, noteToMidi(note)));
-      return SOUNDFONT_NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
     }
 
     function durationToSeconds(duration) {
@@ -1161,10 +1155,9 @@
     }
 
     // Resolves with the sampled piano, or null after a timeout so playback can
-    // start with the built-in synth instead of waiting on a slow CDN forever.
-    // Loading continues in the background and is used on the next Play.
+    // start with the built-in synth instead of waiting forever if decoding stalls.
     function loadPianoSamples(notes, timeoutMs = 6000) {
-      const loading = getSoundFontPiano(notes);
+      const loading = getPianoSamples(notes);
       if (!loading || !loading.then) return Promise.resolve(loading || null);
       let timer = null;
       const timeout = new Promise(resolve => {
@@ -1176,30 +1169,87 @@
       return Promise.race([loading, timeout]).finally(() => clearTimeout(timer));
     }
 
-    async function getSoundFontPiano(notes = []) {
-      if (!soundFontAvailable || !window.Soundfont) return null;
-      const normalizedNotes = [...new Set(notes.map(noteToSoundFontName).sort())];
-      const notesKey = normalizedNotes.join(',');
-      if (soundFontPiano && soundFontPianoNotesKey === notesKey) return soundFontPiano;
-      if (!soundFontPianoPromise) {
-        soundFontPianoPromise = Soundfont.instrument(audioCtx, 'acoustic_grand_piano', {
-          soundfont: 'MusyngKite',
-          format: 'mp3',
-          gain: 2.2,
-          notes: normalizedNotes.length ? normalizedNotes : undefined
-        }).then(player => {
-          soundFontPiano = player;
-          soundFontPianoNotesKey = notesKey;
-          soundFontPianoPromise = null;
-          return player;
-        }).catch(error => {
-          soundFontPianoPromise = null;
-          soundFontAvailable = false;
-          console.warn('SoundFont piano failed to load; falling back to local synthesis.', error);
-          return null;
-        });
+    const PIANO_SAMPLE_MIDIS = Object.keys(window.PIANO_SAMPLES || {}).map(Number).sort((x, y) => x - y);
+
+    function nearestPianoSampleMidi(midi) {
+      let best = PIANO_SAMPLE_MIDIS[0];
+      PIANO_SAMPLE_MIDIS.forEach(candidate => {
+        if (Math.abs(candidate - midi) < Math.abs(best - midi)) best = candidate;
+      });
+      return best;
+    }
+
+    function base64ToArrayBuffer(base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes.buffer;
+    }
+
+    function decodeAudio(context, data) {
+      // The callback form also works on older Safari, which has no promise form.
+      return new Promise((resolve, reject) => {
+        const result = context.decodeAudioData(data, resolve, reject);
+        if (result && result.then) result.then(resolve, reject);
+      });
+    }
+
+    // A gentle generated room reverb so the dry samples sound like a piano in a room.
+    function makeReverbImpulse(context, seconds = 2.2) {
+      const length = Math.floor(context.sampleRate * seconds);
+      const impulse = context.createBuffer(2, length, context.sampleRate);
+      for (let channel = 0; channel < 2; channel++) {
+        const data = impulse.getChannelData(channel);
+        for (let i = 0; i < length; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3.2);
+        }
       }
-      return soundFontPianoPromise;
+      return impulse;
+    }
+
+    function getPianoOutput() {
+      if (pianoOutput && pianoOutput.context === audioCtx) return pianoOutput.input;
+      const input = audioCtx.createGain();
+      const dry = audioCtx.createGain();
+      const wet = audioCtx.createGain();
+      const reverb = audioCtx.createConvolver();
+      const compressor = audioCtx.createDynamicsCompressor();
+      dry.gain.value = .9;
+      wet.gain.value = .22;
+      reverb.buffer = makeReverbImpulse(audioCtx);
+      compressor.threshold.value = -14;
+      compressor.ratio.value = 3;
+      input.connect(dry);
+      input.connect(reverb);
+      reverb.connect(wet);
+      dry.connect(compressor);
+      wet.connect(compressor);
+      compressor.connect(audioCtx.destination);
+      pianoOutput = { context: audioCtx, input };
+      return input;
+    }
+
+    // Decodes the bundled piano samples needed for these notes. Resolves with
+    // the buffer map, or null when samples are missing or cannot be decoded.
+    async function getPianoSamples(notes = []) {
+      if (!pianoSamplesAvailable || !PIANO_SAMPLE_MIDIS.length) return null;
+      if (pianoBuffersContext !== audioCtx) {
+        pianoBuffers = new Map();
+        pianoBuffersContext = audioCtx;
+      }
+      const wanted = [...new Set(notes.map(note => nearestPianoSampleMidi(noteToMidi(note))))];
+      try {
+        await Promise.all(wanted.filter(midi => !pianoBuffers.has(midi)).map(midi => {
+          const decoding = decodeAudio(audioCtx, base64ToArrayBuffer(window.PIANO_SAMPLES[midi]));
+          pianoBuffers.set(midi, decoding);
+          return decoding.then(buffer => pianoBuffers.set(midi, buffer));
+        }));
+        return pianoBuffers;
+      } catch (error) {
+        pianoSamplesAvailable = false;
+        console.warn('Piano samples could not be decoded; falling back to local synthesis.', error);
+        return null;
+      }
     }
 
     function clearPlaybackTimers() {
@@ -1321,35 +1371,44 @@
       }, Math.max(80, (end - audioCtx.currentTime + .1) * 1000));
     }
 
-    function playSoundFontPianoNote(note, duration, when) {
-      if (!soundFontPiano) {
+    function playSampledPianoNote(note, duration, when) {
+      const midi = Math.max(21, Math.min(108, noteToMidi(note)));
+      const sampleMidi = PIANO_SAMPLE_MIDIS.length ? nearestPianoSampleMidi(midi) : null;
+      const buffer = pianoSamplesAvailable && sampleMidi !== null ? pianoBuffers.get(sampleMidi) : null;
+      if (!(buffer instanceof AudioBuffer)) {
         playPianoNote(note, duration, when);
         return;
       }
       const start = Math.max(audioCtx.currentTime + .02, when);
-      const length = Math.max(.12, durationToSeconds(duration) * .96);
-      const player = soundFontPiano.play(noteToSoundFontName(note), start, {
-        duration: length,
-        gain: .78,
-        attack: .002,
-        decay: .18,
-        sustain: .62,
-        release: .9
-      });
-      if (!player) {
-        playPianoNote(note, duration, when);
-        return;
-      }
-      activeAudioNodes.push(player);
-      setTimeout(() => {
-        activeAudioNodes = activeAudioNodes.filter(node => node !== player);
-      }, Math.max(120, (start + length + 1 - audioCtx.currentTime) * 1000));
+      const held = Math.max(.15, durationToSeconds(duration));
+      // Keys are released like a pianist would: the damper fades the string
+      // a little after the written length, faster for high notes.
+      const release = midi > 84 ? .35 : midi > 60 ? .55 : .8;
+      const stopAt = Math.min(start + buffer.duration, start + held + release);
+      const source = audioCtx.createBufferSource();
+      const gain = audioCtx.createGain();
+      source.buffer = buffer;
+      source.playbackRate.value = Math.pow(2, (midi - sampleMidi) / 12);
+      const level = .9;
+      gain.gain.setValueAtTime(level, start);
+      gain.gain.setValueAtTime(level, Math.max(start, stopAt - release));
+      gain.gain.exponentialRampToValueAtTime(.0001, stopAt);
+      source.connect(gain);
+      gain.connect(getPianoOutput());
+      source.start(start);
+      source.stop(stopAt + .05);
+      activeAudioNodes.push(source);
+      source.addEventListener('ended', () => {
+        activeAudioNodes = activeAudioNodes.filter(node => node !== source);
+        source.disconnect();
+        gain.disconnect();
+      }, { once: true });
     }
 
     function playBrowserNote(note, duration, when) {
       const voice = els.instrument.value;
       if (voice === 'piano') {
-        playSoundFontPianoNote(note, duration, when);
+        playSampledPianoNote(note, duration, when);
         return;
       }
       const now = audioCtx.currentTime;
@@ -1916,7 +1975,7 @@
       try {
         await getAudioContext();
         if (requestId !== playbackRequestId) return;
-        if (els.instrument.value === 'piano' && soundFontAvailable) {
+        if (els.instrument.value === 'piano' && pianoSamplesAvailable) {
           setStatus('Loading acoustic grand piano samples...');
           await loadPianoSamples(detected.notes.map(n => n.note));
         }
