@@ -50,8 +50,16 @@ cat > "$PLIST" <<PL
   <key>StandardErrorPath</key><string>$STATE/server.log</string>
 </dict></plist>
 PL
-launchctl bootout "gui/$(id -u)/com.scorelens.server" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+SVC="gui/$(id -u)/com.scorelens.server"
+if launchctl print "$SVC" >/dev/null 2>&1; then
+  # Already installed: restart it with the new code.
+  launchctl bootout "$SVC" 2>/dev/null || true
+  # bootout finishes in the background; wait until the old one is gone.
+  for i in $(seq 1 20); do launchctl print "$SVC" >/dev/null 2>&1 || break; sleep 0.5; done
+fi
+if ! launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
+  launchctl kickstart -k "$SVC" 2>/dev/null || { echo "Could not start the server with launchctl. Try: launchctl kickstart -k $SVC"; exit 1; }
+fi
 
 for i in $(seq 1 30); do
   if [ -f "$STATE/key" ] && curl -s -o /dev/null "http://localhost:$PORT/"; then break; fi
