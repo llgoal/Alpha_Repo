@@ -42,17 +42,51 @@ def load_key():
     return f.read_text().strip()
 
 
+class Homr:
+    """homr kept loaded in this process (models load once, not per page);
+    the command line is the fallback if its internals ever change."""
+
+    def __init__(self):
+        self.run = None
+        try:
+            import onnxruntime as ort
+            from homr.main import ProcessingConfig, download_weights, process_image
+            from homr.music_xml_generator import XmlGeneratorArguments
+            ort.set_default_logger_severity(3)
+            download_weights(False, False, False)
+            # No title OCR: the app does not use it and it costs time.
+            cfg = ProcessingConfig(False, False, False, False, -1, False, False, False, False)
+            self.run = lambda path: process_image(path, cfg, XmlGeneratorArguments(False, None, None))
+            print('homr loaded in-process', flush=True)
+        except Exception as e:  # noqa: BLE001
+            print('homr in-process unavailable (%s); using the command line' % e, flush=True)
+
+    def __call__(self, img):
+        if self.run:
+            self.run(str(img))
+        else:
+            subprocess.run([HOMR, '--no-title', str(img)], cwd=img.parent, capture_output=True, text=True, timeout=300)
+        return img.with_suffix('.musicxml')
+
+
+HOMR_RUN = None
+
+
 def recognize(data, suffix):
+    global HOMR_RUN
     with tempfile.TemporaryDirectory(prefix='scorelens-') as tmp:
         img = Path(tmp) / ('page' + suffix)
         img.write_bytes(data)
         t0 = time.time()
         with LOCK:
-            proc = subprocess.run([HOMR, str(img)], cwd=tmp, capture_output=True, text=True, timeout=300)
-        xml = img.with_suffix('.musicxml')
+            if HOMR_RUN is None:
+                HOMR_RUN = Homr()
+            try:
+                xml = HOMR_RUN(img)
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError('homr could not read the page: %s' % e)
         if not xml.exists():
-            tail = (proc.stdout + proc.stderr).strip().splitlines()[-3:]
-            raise RuntimeError('homr found no music: ' + ' | '.join(tail))
+            raise RuntimeError('homr found no music on the page')
         result = musicxml_events.to_result(xml.read_text(encoding='utf-8'))
         result['seconds'] = round(time.time() - t0, 1)
         return result
@@ -113,12 +147,21 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json(200, result)
 
 
+def warm_up():
+    global HOMR_RUN
+    with LOCK:
+        if HOMR_RUN is None:
+            HOMR_RUN = Homr()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--port', type=int, default=8765)
     ap.add_argument('--host', default='0.0.0.0')
     args = ap.parse_args()
     Handler.key = load_key()
+    # Load the models now, so the first page is not slow.
+    threading.Thread(target=warm_up, daemon=True).start()
     print('ScoreLens server on port %d (homr: %s)' % (args.port, HOMR), flush=True)
     print('Open once with:  http://localhost:%d/#key=%s' % (args.port, Handler.key), flush=True)
     ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()

@@ -279,13 +279,16 @@
 
   // ---------- recognition ----------
 
-  function runRecognition() {
+  async function runRecognition() {
     if (!image) return;
     stop();
     result = null;
     $('playBtn').disabled = true;
     $('resultArea').hidden = true;
     setStatus('Recognizing…');
+    // Send the page to the AI reader first, so it works while the browser
+    // reads (on a phone the in-browser reading can take several seconds).
+    const pending = server.ok ? await sendToServer(image) : null;
     // Let the status paint before the (synchronous) recognizer runs.
     setTimeout(() => {
       const t0 = performance.now();
@@ -320,7 +323,7 @@
       $('handSel').hidden = !hasHands();
       renderResult();
       draw();
-      if (server.ok && res.staves.length) askServer(res);
+      if (pending) applyServer(pending, res);
     }, 30);
   }
 
@@ -350,28 +353,49 @@
     } catch (e) { server.ok = false; }
   }
 
-  async function askServer(local) {
-    const asked = image;
+  // Starts the upload (a smaller JPEG: the AI reader does not need more)
+  // and returns the pending answer with the scale to map positions back.
+  async function sendToServer(img) {
     const req = (server.req = {});
-    setStatus($('status').textContent + ' Reading again with the AI reader on your computer…');
+    const f = Math.min(1, 2200 / Math.max(img.width, img.height));
+    let src = img;
+    if (f < 1) {
+      src = document.createElement('canvas');
+      src.width = Math.round(img.width * f); src.height = Math.round(img.height * f);
+      src.getContext('2d').drawImage(img, 0, 0, src.width, src.height);
+    }
+    const blob = await new Promise(res => src.toBlob(res, 'image/jpeg', 0.88));
+    const t0 = performance.now();
+    const answer = fetch('api/recognize', { method: 'POST', headers: { 'X-ScoreLens-Key': server.key, 'Content-Type': 'image/jpeg' }, body: blob })
+      .then(async r => { const j = await r.json(); if (!r.ok || !j.ok) throw new Error(j.error || r.statusText); return j; });
+    answer.catch(() => {}); // handled in applyServer
+    return { req, img, f, answer, t0 };
+  }
+
+  async function applyServer(p, local) {
+    if (server.req !== p.req) return;
+    const base = $('status').textContent;
+    setStatus(base + ' Reading again with the AI reader on your computer…');
     try {
-      const blob = await new Promise(res => image.toBlob(res, 'image/jpeg', 0.92));
-      const r = await fetch('api/recognize', { method: 'POST', headers: { 'X-ScoreLens-Key': server.key, 'Content-Type': 'image/jpeg' }, body: blob });
-      const srv = await r.json();
-      if (server.req !== req || image !== asked) return; // a newer image came in
-      if (!r.ok || !srv.ok) throw new Error(srv.error || r.statusText);
+      const srv = await p.answer;
+      if (server.req !== p.req || image !== p.img) return; // a newer image came in
       const notes = srv.events.filter(e => e.type === 'note').length;
       if (!notes) throw new Error('no notes');
+      // Positions back to this image's scale.
+      if (p.f < 1) for (const ev of srv.events) {
+        if (ev.x != null) { ev.x /= p.f; ev.y /= p.f; }
+        for (const q of ev.pitches || []) if (q.x != null) { q.x /= p.f; q.y /= p.f; }
+      }
       stop();
       result = mergeServerResult(local, srv);
       $('handSel').hidden = !hasHands();
       $('playBtn').disabled = false;
       renderResult();
       draw();
-      setStatus(`Done with the AI reader (homr): ${notes} notes, in ${srv.seconds} s.`);
+      setStatus(`Done with the AI reader (homr): ${notes} notes, in ${((performance.now() - p.t0) / 1000).toFixed(1)} s.`);
     } catch (e) {
-      if (server.req !== req) return;
-      setStatus('Done in the browser. (The AI reader could not read it: ' + (e.message || e) + ')');
+      if (server.req !== p.req) return;
+      setStatus(base + ' (The AI reader could not read it: ' + (e.message || e) + ')');
     }
   }
 
