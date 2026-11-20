@@ -132,7 +132,7 @@
     <button class="btn" id="pianoDemoBtn" type="button">Piano demo</button>
     <span class="spacer"></span>
     <label class="tempo">Tempo
-      <input id="tempo" type="range" min="40" max="200" step="2" value="96">
+      <input id="tempo" type="range" min="40" max="220" step="1" value="96">
       <output id="tempoOut">♩ = 96</output>
     </label>
     <select id="handSel" aria-label="Hands" hidden>
@@ -173,7 +173,7 @@
     <li>Not yet supported: handwritten music, two melodies on one staff, ties and triplets.</li>
   </ul>
 
-  <footer>Piano sound: Salamander Grand Piano by Alexander Holm, CC BY 3.0. Recognition runs entirely in your browser; images are never uploaded. Build 66eb3ab2.</footer>
+  <footer>Piano sound: Salamander Grand Piano by Alexander Holm, CC BY 3.0. Recognition runs entirely in your browser; images are never uploaded. Build eada8515.</footer>
 </div>
 
 <script src="piano-samples.js"></script>
@@ -192,6 +192,7 @@
 
   let image = null;    // canvas holding the source image
   let result = null;
+  const DEFAULT_TEMPO = 96;
   let playing = null;  // { startAt, schedule, raf }
   let current = new Set(); // indexes of events sounding now
 
@@ -300,6 +301,10 @@
         return;
       }
       result = res;
+      // The tempo printed on the score (♩ = 89), else the default.
+      const bpm = res.tempo && res.tempo.bpm ? Math.max(40, Math.min(220, res.tempo.bpm)) : DEFAULT_TEMPO;
+      $('tempo').value = bpm;
+      $('tempoOut').textContent = '♩ = ' + bpm;
       const ms = Math.round(performance.now() - t0);
       const notes = res.events.filter(e => e.type === 'note').length;
       if (!res.staves.length) {
@@ -355,6 +360,18 @@
     return DUR_NAMES[ev.beats] || `${ev.beats} beats`;
   }
 
+  // 1,2,3,4,5,6,3,4,7 -> "1–6, 3–4, 7"
+  function spans(order) {
+    const out = [];
+    for (let i = 0; i < order.length;) {
+      let j = i;
+      while (j + 1 < order.length && order[j + 1] === order[j] + 1) j++;
+      out.push(i === j ? String(order[i]) : `${order[i]}–${order[j]}`);
+      i = j + 1;
+    }
+    return out.join(', ');
+  }
+
   function renderResult() {
     const area = $('resultArea');
     if (!result || !result.staves.length) { area.hidden = true; return; }
@@ -368,6 +385,8 @@
       ['Clef', hasHands() ? 'Treble + bass (piano, both hands)' : clefs.join(' + ')],
       ['Key', keyText(s0.key)],
       ['Time', time === 'C' ? 'C (4/4)' : time ? 'Detected (plays written note values)' : 'Not marked'],
+      ['Tempo', result.tempo ? `♩ = ${result.tempo.bpm} (from the score)` : `Not marked (♩ = ${DEFAULT_TEMPO})`],
+      ...(result.repeats ? [['Repeats', 'Plays bars ' + spans(result.playOrder)]] : []),
       ['Notes', String(noteEvents.length)],
       ['Length', `${+totalBeats.toFixed(2)} beats`]
     ];
@@ -546,17 +565,20 @@
     // Each event carries its start in beats; both hands of a piano system
     // start together, so they are simply scheduled at their own times.
     let seq = 0, end = 0;
+    // A bar inside a repeat has more than one start.
     events.forEach((ev, i) => {
-      const beat = ev.start != null ? ev.start : seq;
-      seq = beat + ev.beats;
+      const beats = ev.starts && ev.starts.length ? ev.starts : [ev.start != null ? ev.start : seq];
+      seq = beats[0] + ev.beats;
       if (!wanted(ev)) return;
-      const t = beat * spb, dur = ev.beats * spb;
-      if (ev.type === 'note') {
-        const vel = (ev.hand === 'left' ? 0.75 : 0.9) / Math.sqrt(ev.pitches.length);
-        for (const p of ev.pitches) PianoPlayer.playNote(p.midi, startAt + t, dur * 0.95, vel);
+      for (const beat of beats) {
+        const t = beat * spb, dur = ev.beats * spb;
+        if (ev.type === 'note') {
+          const vel = (ev.hand === 'left' ? 0.75 : 0.9) / Math.sqrt(ev.pitches.length);
+          for (const p of ev.pitches) PianoPlayer.playNote(p.midi, startAt + t, dur * 0.95, vel);
+        }
+        schedule.push({ i, start: startAt + t, end: startAt + t + dur });
+        end = Math.max(end, t + dur);
       }
-      schedule.push({ i, start: startAt + t, end: startAt + t + dur });
-      end = Math.max(end, t + dur);
     });
     const t = end;
     playing.startAt = startAt;

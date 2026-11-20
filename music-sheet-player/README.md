@@ -22,6 +22,9 @@ Then open <http://127.0.0.1:8787/> and press **Melody demo** or **Piano demo**, 
 - Whole/half/quarter/eighth/sixteenth rests, barlines, simple chords on one stem.
 - Ledger lines above and below the staff, slightly rotated photos, uneven lighting, and phone photos of a book page whose lines bend toward the spine or the edge.
 - Chords with heads stacked in thirds (e.g. G–B–D in the left hand).
+- Repeat signs and first/second endings: the music is played with its repeats (e.g. bars 1–12, then 5–10, then the second ending).
+- A metronome mark such as "♩ = 89" above the first staff sets the playback tempo (a dotted or half note is converted to quarter beats). Without one, playback starts at ♩ = 96; the slider changes it.
+- When one hand's notes in a bar do not add up (a missed note or a misread value), that hand is placed by where its notes stand on the page against the other hand, so the hands stay together.
 
 Not yet: handwritten music, multiple voices on one staff, ties, triplets, repeats and dynamics. The time signature is detected but playback follows the written note values.
 
@@ -44,7 +47,7 @@ On every piano test image the two staves were paired into the right systems.
 ## Files
 
 - `index.html` – the app UI, drawing, and playback scheduling.
-- `omr.js` – the recognizer. `OMR.recognize(rgbaOrGray, width, height, { clef })` returns staves (clef, key, lines, barlines) and events (`{ type: 'note', pitches, midi, name, beats, start, hand }` or `{ type: 'rest', beats, start, hand }`; `start` is in beats from the beginning and `hand` is `'right'`, `'left'` or `null`), and `systems` (which staves play together). Works in the browser and in Node.
+- `omr.js` – the recognizer. `OMR.recognize(rgbaOrGray, width, height, { clef })` returns staves (clef, key, lines, barlines) and events (`{ type: 'note', pitches, midi, name, beats, start, hand }` or `{ type: 'rest', beats, start, hand }`; `start` is in beats from the beginning, `starts` lists every start when repeats play it again, and `hand` is `'right'`, `'left'` or `null`), `systems` (which staves play together), `tempo` (`{ bpm }` when marked, else `null`) and `playOrder` (bar numbers in playing order). Works in the browser and in Node.
 - `player.js` – Web Audio piano: `PianoPlayer.unlock()` (call inside a tap), `load(midis)`, `playNote(midi, when, seconds)`, `stopAll()`.
 - `piano-samples.js` – Salamander Grand Piano samples embedded as base64, so playback works offline and inside sandboxed previews.
 - `demo.png`, `demo-piano.png` – the demo scores.

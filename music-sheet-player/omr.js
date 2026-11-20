@@ -410,11 +410,15 @@
       }
       const bars = findBarlines(ctx, staff, header.end, valid);
       const rests = findRests(ctx, staff, header.end);
-      result.staves.push(describeStaff(staff, bars));
+      const desc = describeStaff(staff, bars);
+      desc.repeats = findRepeats(ctx, staff);
+      desc.voltas = findVoltas(ctx, staff);
+      result.staves.push(desc);
       result.events.push(...assembleStaff(ctx, staff, valid, rests, bars));
     }
     fillWholeMeasureRests(result.events);
     result.systems = findSystems(ctx, staves, result.staves);
+    result.tempo = findTempo(ctx, staves[0]);
     computeTimeline(result);
     // Map coordinates back to the input image.
     result.toImage = (x, y) => {
@@ -1936,6 +1940,315 @@
     }
   }
 
+  // ---------- tempo, repeats and endings ----------
+
+  // Digit shapes (0-9) from common serif and sans fonts: aspect ratio and an
+  // 8x12 grid of ink levels (hex). Used for tempo marks and ending numbers.
+  const DIGIT_TEMPLATES = [
+    [0, 0.63, "03baab200e5008e07e0002f7cc0000fcea0000defa0000dffa0000dfeb0000debc0000fb6e0002f60d7009c002bdda00"],
+    [1, 0.538, "0019d00039cfd000500fd000000fd000000fd000000fd000000fd000000fd000000fd000000fd000000fd0009abffba8"],
+    [2, 0.615, "7cddea30a5000bf3800004f9000003f9000005f600000bd000005f300005d300008b00000a900000cc666665fffffffe"],
+    [3, 0.611, "7dbacb30a4000cf1600007f5000007f400001dc0009df80000014bd2000000fc000000dfb00000fde20008f5adddda20"],
+    [4, 0.712, "00000d6000009f600005af60000c1f6000840f6004900f600d100f6094000f60feeeeffd88888fb700000f6000000f60"],
+    [5, 0.604, "affffff0a8666660a3000000a3000000a30000008baacc70000005f8000000ed000000dfa00000fce10008f4adddea20"],
+    [6, 0.648, "007babd109d000912f4000108e000000cc012100ddbbbfb0dc0002f8cc0000cd9e0000be4f2000cb0ba003f4009dcd40"],
+    [7, 0.635, "effffffee66666c8800001e00000097000002e000000a6000002e00000096000001d00000088000002f100000a900000"],
+    [8, 0.63, "06caac403f4006f38f0002f88f0002f82f4007f205fcdf302e6128e2cb0000ecfa0000cfea0000de7e2004f707dccc50"],
+    [9, 0.63, "07caab208e1009e0fa0003f7f90000fbfa0000ed9e1000ee09ecb8ee000000fc000002f9200006f293003e706eddc500"],
+    [0, 0.63, "03ceeb200ef22fe07fd00ef7cfb00cfcefa00bfeffa00bffffa00bffefa00bfebfb00cfb6fd00ef60df34fc002bffa00"],
+    [1, 0.577, "002af7003bfff700848ff700008ff700008ff700008ff700008ff700008ff700008ff700008ff700008ff700cffffffd"],
+    [2, 0.642, "4cffea207b108ff276000ff900000ff900001ff600008fc00004fd10002ed10003e910002e500000dffffffdeffffffe"],
+    [3, 0.63, "6dddfb4098009ff284003ff700003ff60001afd000fffb0000238fe400000cfe30000afff1000cfee6006ff59dffea30"],
+    [4, 0.731, "00005fd00000dfd00008efd0001e8fd000c77fd007c07fd00e207fd09a338fd2fffffffebbbbdffa00007fd000007fd0"],
+    [5, 0.642, "4ffffff04ffffff04a0000004a0000004a2330004daaefa100001ffa00000bff30000bffe1000cfde7005ff49dfffb20"],
+    [6, 0.648, "008edec10bf700e24ff100a1bfc00000ffa46400fffcefd1ff801ff9ff900cfdcfb00bfe6fe00cfb0cf52ff301aefc40"],
+    [7, 0.635, "fffffffffffffffaf00003f360000bc000004f400000dd000004f600000be000003f700000cf100005fa00000ef40000"],
+    [8, 0.63, "07dded606ff00ff6bfc00cfbbfc00dfb4ff22ff407ffff405fd22ef5ef800afeff7008ffff8009ff8fc11df807dffd60"],
+    [9, 0.648, "06deec405ff12ff1cfc00df8ffa00bfcdfb00aff8ff109ff0bfdceff00132afe00000cfa76001ff47b10af904dffd600"],
+    [0, 0.683, "01add9100ca00bc05f2002f5ae0000eadc0000cdeb0000beeb0000bedc0000cdae0000ea5f2002f50ca00bc001add910"],
+    [1, 0.508, "006df1007e9ef100810df100000df100000df100000df100000df100000df100000df100000df100000df1008ccffdcb"],
+    [2, 0.644, "4adcdb40d9000af5a10001fb000000fd000003f8000009e100003f300002d500002d500004e500084f73333eefffffff"],
+    [3, 0.65, "39dcdc40ab0008f3840001f7000002f500003cb0005deb20000007f4000000dc000000aff00000cef80006f76bdcdc50"],
+    [4, 0.763, "0000bf000004ff00000c8f0000586f0000d16f0008706f001e106f0097006f00ecccefcc00006f0000006f00000cefc8"],
+    [5, 0.644, "8ffffff08733333084000000840000008bccda2067000af3000002fb000000ee000000eee00001fbf7000af36bdcda20"],
+    [6, 0.683, "006ccec308c101d52f2000328d000000cb4bc920eec119f3ef2000ebdf0000bebf0000bf6f2000db0da006f401addc40"],
+    [7, 0.655, "ffffffffe33333bbb00001f5000006e000000d6000004e000000a8000001f1000007b000000e4000005e000000d70000"],
+    [8, 0.667, "03cddc502f8005f57f1000ea7f1000ea1e8005f302cede302e9107f4be0000beeb00009fdd0000af6f6003f905cddd70"],
+    [9, 0.683, "04cdda104f600bd0cd0002f6fa0000fbfb0000fdbe0003fe3f902ced029ca4cc000000e8230003f26d101c703cecc500"],
+    [0, 0.8, "02bffa101ef23fd07fc00df6cfa00bfbffa00afeff900affff900affffa00afecfa00bfb7fc00df61ef23fd002bffa10"],
+    [1, 0.644, "03bff8009ecff800918ff800008ff800008ff800008ff800008ff800008ff800008ff800008ff800008ff800cfffffff"],
+    [2, 0.729, "6ceffc50db11bff6d3001ffe20000fff00000ffe00004ff50000df900009f70001bd20063d90000fefffffffefffffff"],
+    [3, 0.75, "7ceffb30da12cff3d0005ff700005ff70002dfe100affd200002bff400001ffc20000efed0000ffdf801aff69cffeb40"],
+    [4, 0.831, "0004ff60000bff60003cff6000b5ff6004d1ff600c40ff604d00ff60b833ff83ccccffec0000ff600000ff60005ffffd"],
+    [5, 0.729, "8ffffff08ffffff085000000850210008bdefe506600aff300003ffb00001ffe20001ffef0004ffaf702cff28cffea20"],
+    [6, 0.767, "008dffd50bf802d85fe00035afa00000dfbbfe80fff42ff7ffe00cfeefc00bffcfc00bff8fe00cfd1ef42ff602aefd60"],
+    [7, 0.741, "efffffffefffffffe54444cce10001f5000008d000001f7000008f100001f8000006f100000d9000003f200000bb0000"],
+    [8, 0.783, "05dffd604ff22ff59fe00cfb9fe00cfb4ff10ef505feef603ef44ef4cfb009fdff9008ffefa009ff8fe11df907dffd70"],
+    [9, 0.783, "05dffa204ff23fd0bfb00cf7efa00bfbefa00bfecfb00cfe6ff23ffe07efbafc000009f944000cf47d207fb04cffd800"],
+    [0, 0.655, "01977a100d6008b06f1001f4bd0000daeb0000cefa0000bffa0000bfeb0000cebd0000da6f0001f40d5007b001977910"],
+    [1, 0.426, "016bf40055aff400005ff400005ff400005ff400005ff400005ff400005ff400005ff400005ff400005ff50036dffb53"],
+    [2, 0.667, "04cfe9003c55bf9080000de0300008f0000009b000000e50000059000001a00000190000009000031b766678bffffff1"],
+    [3, 0.582, "03bffc302b204ef0600007f2000007e000002a200017ff8000247df8000000dd0000009d000000b8561006c09ffca600"],
+    [4, 0.698, "00000d2000009f2000056f2000172f2000802f2006402f2029002f2090002f20ffffffff00002f2000002f2000002f20"],
+    [5, 0.571, "0049999800cbbbb3066000001ec950003adffe4000028ff3000003fa000000bc000000aa000000e475000a90bffba500"],
+    [6, 0.618, "00005742004e800005f600001fb000008f579710ef745df3fb0002fcfa0000cfeb0000bf9e0000cd1e5001f403b86940"],
+    [7, 0.63, "2ffffffd974444c8500001f2000005c000000a6000000e1000004c000000a7000001f3000006d000000c8000002f2000"],
+    [8, 0.564, "08767a50aa0002f3f80000e7ee1002f34fe44b5004fff30004abff607c003cf6f70000edf70000adbc0000d718a66870"],
+    [9, 0.625, "03968a201e2007d09d0000f7dc0000dcdd0000de9f3000de1de778fa005743f500000cd00000af30000ac20027950000"],
+    [0, 0.643, "01a899000ce01fa05fc00ff3bfb00efaefb00efeffb00effffb00effefb00efebfb00efa6fc00ff30ce01fa001a89900"],
+    [1, 0.545, "0015ba004afffa00308ffa00006ffa00006ffa00006ffa00006ffa00006ffa00006ffa00006ffa00007ffb0068efff96"],
+    [2, 0.673, "008efb200affffe04812cff430002ff500000ff200004f900000cc000008a0000039000502c6667b1efffff9bffffff6"],
+    [3, 0.643, "019efe700a55eff241006ff400005fd00001cf40004efff400008ffe000007ff000000ff350000f7efc106a06dfe9600"],
+    [4, 0.655, "00002ec00000bfc00008efc00048bfc001a0bfc00b20bfc06600bfc0c666dfd6ffffffff9999efe90000bfc00000bfc0"],
+    [5, 0.636, "00effffe03fffff8074333310a4300000ffffa204fffffe00347dff8000006fb000000ba350000b5ffe505907effc600"],
+    [6, 0.643, "00003996001bf50002df40001ef900007ff77600cff6bfd1efc01ffbffb00dffdfc00cff8fd00cfb1ef00ef202b97c40"],
+    [7, 0.667, "8ffffffdbffffff6c7666af160000cb000002f6000007f100000db000003f5000009e000000fa000005f500000bf0000"],
+    [8, 0.643, "05b78d706f800af6bf9007fabff60af45fffcc3006fffe4006bbfff48f708ffcef300dfeef3009fc8f700df307dabb40"],
+    [9, 0.643, "04c7aa204fb02fd0bfa00ff7ffa00efdffb00effbfd00ffe3efa7ffb01678ff50000afc00005fd10006fa00069830000"],
+    [0, 0.667, "03bffb301fb33bf28e0001f9ca0000bde800008ff700007ff700007fe800008fba0000bd7f1002f80ed44de103bffb20"],
+    [1, 0.636, "007fc0001beec0009a1cc000200cc000000cc000000cc000000cc000000cc000000cc000000cc000333dd333fffffffe"],
+    [2, 0.643, "05cffd605fb44bf6cd0000dc120000cd000001f900001cd10002dd20004fc00004f900004f800000ce433333ffffffff"],
+    [3, 0.667, "05cffc505f933af5bc0001fa110000fa000007f5002ced400018afd2000001eb3200009fdb0000de6fa44bf706cffd70"],
+    [4, 0.727, "00005f700000ef700008cd70002f2d7000c80d7006e00d701e500d70aa000d70ffffffff44444ea400000d7000000d70"],
+    [5, 0.679, "4ffffff65f3333316f0000007e0000008d4ab8109fd99ee3340002ec0000009f0000009fba0001ec7f934cf507dffc40"],
+    [6, 0.649, "019efd600dd428f56f300084bd000000e94bca30fdc55bf5ff0000eceb00009fcc00009f7f3000ec1ed43bf502affc50"],
+    [7, 0.655, "ffffffff333333bd000004f300000e9000007f100000e8000007f100000e9000004f5000007f200000af000000be0000"],
+    [8, 0.667, "05cffc504f7118f69d0000fb9d0000fa3f7107f405ffff503f9229f5bb0000cde900009fcb0000cd6f9218f706cffd60"],
+    [9, 0.649, "06cffb207f924ce1dc0002f7f80000dbf80000cece1002fe4fd68ece04aca3ad000000ea690005f47f936fb008dfe900"],
+    [0, 0.667, "03cffb302ffddff28fd00cf9cf7008fdef5006ffff4005ffff4005ffef5006ffbf7008fc7fd11df81effffe103bffb20"],
+    [1, 0.673, "019ff5004efff500ee6ff500901ff500001ff500001ff500001ff500001ff500001ff500001ff500cccffdccffffffff"],
+    [2, 0.679, "06cffc605ffffff6cfb00cfc452009fd00000dfb0000aff3001bfe4001efe3000dfd20009fe10000ffffffffffffffff"],
+    [3, 0.702, "04cffc404ffddff4bfa00cf9352009f900003ef4003ffd50003fffc100001bfa782005fedfb00afc5ffffff605cffd60"],
+    [4, 0.782, "0001ef900008ff90001edf90009f6f9002f85f9009f15f902f705f90ce337fb3ffffffff9aaacfda00005f9000005f90"],
+    [5, 0.696, "6ffffff67fecccc58f8000009f700000afadfd50bffffff58a701bfd000004ff120004ffef700bfc8ffffff407dffc50"],
+    [6, 0.684, "01affd500dfdcff36fc009d6bf600000ef369820ffdffff3ffc12dfaff5005fecf5005fe7fc00bfb1efffff402bffd50"],
+    [7, 0.691, "efffffffefffffff000009fa00003ff10000cf700004fd00000cf600004fe00000bfa00000ff600003ff400004ff3000"],
+    [8, 0.684, "07dffd607ff9aff6cf800afacf7008fa6fd44ef407ffff605fe78ff5ef5006fdff2004ffef6008fd8ffbcff707dffd70"],
+    [9, 0.684, "06dffb206ffcefe1df800df7ff3007fbff3007fdcfb12dfe5ffffefe05bc86fc000007fa9e702ef45fffffc007efea10"],
+    [0, 0.683, "01affa100dd45ed06f3003f5be0000eadb0000bdea0000aeea0000aedb0000bdbe0000ea6f3003f50dd45dd001affa10"],
+    [1, 0.603, "7befe000b85de000000de000000de000000de000000de000000de000000de000000de000000de000233de332cffffffe"],
+    [2, 0.627, "5aefeb40ea535cf5200001fc000000de000002fb00000cf30000bf60000af700009f60000af50000bf933333ffffffff"],
+    [3, 0.633, "4beffb4088534cf6000001fc000000fc000019f500fffe4000334bf6000000de0000009f000000ded7435cf68dffea40"],
+    [4, 0.724, "0000bf600005ef60000e6f60008c0f6003f30f600b800f605e000f60e8333f83ffffffff00000f6000000f6000000f60"],
+    [5, 0.644, "7ffffff17f3333307f0000007f1310007ffffd4033003cf5000002fc000000df000000df000003fbd7436ef38dffe920"],
+    [6, 0.667, "006dffc20af734825f400000bc000000f98efc40ffc44bf4ff1000ecfd0000afdd0000af8f1000eb1ec44bf302affc40"],
+    [7, 0.638, "ffffffff333336fb000008f500000ee000005f800000df100003fa000009f300000fd000005f600000be000001f90000"],
+    [8, 0.667, "04cffd603fb439f69f0000dc9f0000cb2f8106f403efff503eb439f5bd0000beeb00008fcd0000bf5fb439f805cffd70"],
+    [9, 0.667, "04cffa104fb44de1ce0001f7fa0000dcfa0000dfce0001ff4fb44dff05cfe89e000000db000004f428437f902cffd600"],
+    [0, 0.8, "02bffa100dffffd07ff22ff6cfa00bfbff8009feff7008ffff7008ffff8009fecfa00bfb7ff23ff60dffffd002bffa10"],
+    [1, 0.707, "8bfff600fffff600d98ff600004ff600004ff600004ff600004ff600004ff600004ff600347ff844efffffffefffffff"],
+    [2, 0.729, "7beffc40effffff4c6109ffb00000ffd00001ffa0000bff30009ff70008ff90008ff70009ffa3333efffffffefffffff"],
+    [3, 0.733, "5ceffc608ffffff643006ffb00000ffb00339ff402ffff6001cdfff500002ffe00000cff83005ffefffffff5adffeb40"],
+    [4, 0.828, "0007ff90001fff90008fff9001fbcf9009f2cf903f90cf90be10cf90fd99efd9ffffffffbbbbffeb0000cf900000cf90"],
+    [5, 0.746, "9ffffff29ffffff29fa333309f9220009ffffe609fddfff531005ffc00000dff00000dffb4007ffbfffffff38cffea30"],
+    [6, 0.767, "007dffd40afffff64ff81043afc00000efbcfd60fffffff7fff41dfeefd008ffcfd008ff7ff41dfc0dfffff402aefc40"],
+    [7, 0.759, "ffffffffffffffff34444ffb00005ff50000bfd00002ff800009ff20001ffa00006ff40000cfd00002ff800009ff2000"],
+    [8, 0.767, "07dffc607ffffff6cfe12ffbbfb00dfa6ff88ff408ffff606ffbbff5ef900bfdff7009feefc11efd8ffffff707dffc60"],
+    [9, 0.783, "04cffa103fffffd0bfc13ff6ef700cfaff700cfdcfc13ffe5ffffffe06efcbfc00000cf924018ff35fffff903dffd700"]
+  ];
+
+  function readDigit(ctx, c) {
+    const { labels, w } = ctx;
+    const GW = 8, GH = 12;
+    const cells = new Float32Array(GW * GH);
+    for (let gy = 0; gy < GH; gy++) {
+      const y0 = c.minY + gy * c.h / GH, y1 = c.minY + (gy + 1) * c.h / GH;
+      for (let gx = 0; gx < GW; gx++) {
+        const x0 = c.minX + gx * c.w / GW, x1 = c.minX + (gx + 1) * c.w / GW;
+        let n = 0, s = 0;
+        for (let y = Math.floor(y0); y < Math.max(Math.floor(y0) + 1, Math.ceil(y1)); y++)
+          for (let x = Math.floor(x0); x < Math.max(Math.floor(x0) + 1, Math.ceil(x1)); x++) { n++; if (labels[y * w + x] === c.id) s++; }
+        cells[gy * GW + gx] = n ? 15 * s / n : 0;
+      }
+    }
+    const aspect = c.w / c.h;
+    let best = null, bestErr = Infinity;
+    for (const [d, a, bits] of DIGIT_TEMPLATES) {
+      let e = 0;
+      for (let i = 0; i < GW * GH; i++) e += Math.abs(cells[i] - parseInt(bits[i], 16));
+      e = e / (GW * GH * 15) + 0.35 * Math.abs(Math.log(aspect / a));
+      if (e < bestErr) { bestErr = e; best = d; }
+    }
+    return { digit: best, err: bestErr };
+  }
+
+  // Reads a row of digit components left to right into a number.
+  function readNumber(ctx, list) {
+    let s = '';
+    for (const c of list) {
+      const r = readDigit(ctx, c);
+      if (r.err > 0.3) return null;
+      s += r.digit;
+    }
+    return s ? Number(s) : null;
+  }
+
+  // "♩ = 89" above the first staff. Finds the "=" (two short bars, one above
+  // the other), the number to its right and a note to its left.
+  function findTempo(ctx, staff) {
+    const { comps, D } = ctx;
+    const top = posY(staff, staff.left, 0);
+    const inBand = c => c.maxY < top - 0.3 * D && c.minY > top - 9 * D && c.minX > staff.left - 2 * D && c.maxX < staff.left + 25 * D;
+    const bars = comps.filter(c => c && inBand(c) && c.w >= 0.4 * D && c.w <= 1.6 * D && c.h <= 0.35 * D + 2 && c.w >= 2.5 * c.h);
+    for (let a of bars) {
+      let b = bars.find(o => o !== a && o.minY > a.maxY && o.minY - a.maxY < 0.8 * D && Math.abs(o.cx - a.cx) < 0.3 * D && Math.abs(o.w - a.w) < 0.3 * D);
+      if (!b && !bars.some(o => o !== a && o.maxY < a.minY && a.minY - o.maxY < 0.8 * D && Math.abs(o.cx - a.cx) < 0.3 * D)) {
+        // The other bar may sit where a ledger line would and have been
+        // erased with the ledger lines: look for it in the original ink.
+        const row = y => { let n = 0; for (let x = a.minX; x <= a.maxX; x++) if (ctx.bin[y * ctx.w + x]) n++; return n / a.w; };
+        for (const dir of [-1, 1]) {
+          const from = dir < 0 ? a.minY - 2 : a.maxY + 2, to = dir < 0 ? a.minY - 1.2 * D : a.maxY + 1.2 * D;
+          let y0 = -1, y1 = -1;
+          for (let y = from; dir < 0 ? y >= to : y <= to; y += dir) {
+            if (y < 0 || y >= ctx.h) break;
+            if (row(y) > 0.8) { if (y0 < 0) y0 = y; y1 = y; } else if (y0 >= 0) break;
+          }
+          if (y0 < 0) continue;
+          const lo = Math.min(y0, y1), hi = Math.max(y0, y1);
+          if (hi - lo + 1 > 0.35 * D + 2) continue;
+          const twin = { minX: a.minX, maxX: a.maxX, minY: lo, maxY: hi, cx: a.cx, cy: (lo + hi) / 2, w: a.w, h: hi - lo + 1 };
+          b = dir < 0 ? a : twin;
+          if (dir < 0) { b = a; a = twin; }
+          break;
+        }
+      }
+      if (!b) continue;
+      const midY = (a.cy + b.cy) / 2;
+      // Digits: to the right, about one space tall or more, centred on "=".
+      const digits = [];
+      let x = Math.max(a.maxX, b.maxX);
+      for (;;) {
+        const d = comps.find(c => c && c !== a && c !== b && c.minX > x && c.minX - x < 1.2 * D && c.h >= 0.7 * D && c.h <= 3 * D && c.w <= 1.6 * D &&
+          Math.abs(c.cy - midY) < 0.6 * D && (!digits.length || Math.abs(c.h - digits[0].h) < 0.25 * digits[0].h));
+        if (!d) break;
+        digits.push(d); x = d.maxX;
+        if (digits.length > 3) break;
+      }
+      dbg('tempo eq', Math.round(a.minX), Math.round(a.minY), 'digits', digits.map(d => [d.minX, d.minY, d.w, d.h].join(',')).join(' '));
+      if (!digits.length || digits.length > 3) continue;
+      // The note: a tall narrow symbol (head and stem) just left of "=".
+      const left = Math.min(a.minX, b.minX);
+      const note = comps.find(c => c && c.maxX < left && left - c.maxX < 3 * D && c.h >= 1.5 * D && c.h <= 5 * D && c.w <= 2 * D &&
+        c.maxY > midY - 0.5 * D && c.minY < midY);
+      if (!note) continue;
+      const n = readNumber(ctx, digits);
+      dbg('tempo read', n, digits.map(d => JSON.stringify(readDigit(ctx, d))).join(' '));
+      if (!n || n < 20 || n > 300) continue;
+      // A dotted note (6/8 and the like) counts dotted quarters; a half
+      // note counts halves. The player counts quarters.
+      const dot = comps.find(c => c && c.minX > note.maxX && c.maxX < left && c.w < 0.6 * D && c.h < 0.6 * D && c.w > 1 && Math.abs(c.cy - note.maxY + 0.3 * D) < 0.6 * D);
+      const headFill = fill(ctx, note.minX, note.maxY - 0.7 * D, note.maxX, note.maxY);
+      let unit = 1;
+      if (headFill < 0.45) unit = 2;
+      if (dot) unit *= 1.5;
+      dbg('tempo', n, 'unit', unit, 'at', Math.round(note.minX), Math.round(note.minY));
+      return { bpm: Math.round(n * unit), marked: n, unit };
+    }
+    return null;
+  }
+
+  // Repeat signs: two dots in the middle spaces beside a barline. Dots on
+  // the right open a repeat, dots on the left close one.
+  function findRepeats(ctx, staff) {
+    const { comps, D } = ctx;
+    const out = [];
+    const isDot = c => c && c.w >= 0.25 * D && c.w <= 0.8 * D && c.h >= 0.25 * D && c.h <= 0.8 * D && c.area >= 0.55 * c.w * c.h && (!c.role || c.role === 'dot-candidate');
+    for (const a of comps) {
+      if (!isDot(a)) continue;
+      if (a.cx < staff.left || a.cx > staff.right + D) continue;
+      if (Math.abs(a.cy - posY(staff, a.cx, 3)) > 0.3 * D) continue;
+      const b = comps.find(c => isDot(c) && Math.abs(c.cx - a.cx) < 0.3 * D && Math.abs(c.cy - posY(staff, a.cx, 5)) < 0.3 * D);
+      if (!b) continue;
+      // A tall stroke through the whole staff right beside the dots.
+      const top = posY(staff, a.cx, 0), bottom = posY(staff, a.cx, 8);
+      const tall = c => c && c !== a && c !== b && c.minY <= top + 0.5 * D && c.maxY >= bottom - 0.5 * D && c.w <= 1.2 * D && c.role !== 'note';
+      const right = comps.find(c => tall(c) && c.minX > a.maxX && c.minX - a.maxX < 1.2 * D);
+      const left = comps.find(c => tall(c) && c.maxX < a.minX && a.minX - c.maxX < 1.2 * D);
+      if (!right && !left) continue;
+      a.role = b.role = 'repeat';
+      out.push({ x: a.cx, type: left ? 'start' : 'end' });
+    }
+    out.sort((p, q) => p.x - q.x);
+    dbg('repeats', staff.index, out.map(r => r.type + '@' + Math.round(r.x)).join(' '));
+    return out;
+  }
+
+  // First and second endings: a bracket above the staff (a long thin line
+  // with a short hook down at its left end), usually numbered "1." / "2.".
+  function findVoltas(ctx, staff) {
+    const { comps, bin, w, h, D } = ctx;
+    const out = [];
+    const ink = (x, y) => x >= 0 && x < w && y >= 0 && y < h && bin[y * w + x];
+    const topL = posY(staff, staff.left, 0), topR = posY(staff, staff.right, 0);
+    // Judged on the original ink: the bracket can sit where a ledger line
+    // would and lose pieces when lines are erased.
+    const onLine = (y, x) => (ctx.staves || []).some(o => { for (let k = 0; k <= 8; k += 2) if (Math.abs(posY(o, x, k) - y) < 0.3 * D) return true; return false; });
+    for (let y = Math.max(1, Math.round(Math.min(topL, topR) - 9 * D)); y <= Math.max(topL, topR) - 0.9 * D; y++) {
+      let start = -1, gap = 0;
+      const runs = [];
+      for (let x = staff.left; x <= staff.right + 3; x++) {
+        const on = x <= staff.right && ink(x, y);
+        if (on) {
+          // After a bridged gap, a hook down starts the next bracket.
+          if (start >= 0 && gap > 2) {
+            let down = 0;
+            for (let yy = y + 1; yy < y + 2 * D; yy++) {
+              let any = false;
+              for (let xx = x; xx <= x + 0.3 * D; xx++) if (ink(xx, yy)) any = true;
+              if (any) down++; else break;
+            }
+            if (down >= 0.8 * D) { runs.push([start, x - gap - 1]); start = x; }
+          }
+          if (start < 0) start = x;
+          gap = 0; continue;
+        }
+        if (start < 0) continue;
+        // A faint line in a photo breaks up: bridge short gaps.
+        if (++gap <= Math.max(2, 0.6 * D) && x <= staff.right) continue;
+        runs.push([start, x - gap]);
+        start = -1; gap = 0;
+      }
+      for (const [x0, x1] of runs) {
+        if (x1 - x0 + 1 < 3 * D) continue;
+        // Judged where the run is (the page may be tilted): clear of every
+        // staff's lines, above this staff and below any staff above it.
+        const mid = (x0 + x1) / 2;
+        if (y > posY(staff, mid, 0) - 0.9 * D || y < posY(staff, mid, 0) - 9 * D || onLine(y, mid)) continue;
+        if ((ctx.staves || []).some(o => o !== staff && posY(o, mid, 8) < posY(staff, mid, 0) && y < posY(o, mid, 8) + D)) continue;
+        if (out.some(v => v.x0 < x1 && v.x1 > x0 && Math.abs(v.y - y) < D)) continue;
+        // Thin: little ink a bit above and below along the run.
+        const cover = yy => { let n = 0; for (let xx = x0; xx <= x1; xx++) if (ink(xx, yy)) n++; return n / (x1 - x0 + 1); };
+        let thick = 1;
+        while (thick < D && cover(y + thick) > 0.6) thick++;
+        if (thick > Math.max(2, 0.3 * D)) continue;
+        if (cover(Math.round(y + 0.4 * D)) > 0.25 || cover(Math.round(y - 0.4 * D)) > 0.25) continue;
+        // The hook: ink straight down at the left end.
+        let hook = 0;
+        for (let yy = y; yy < y + 3 * D; yy++) {
+          let any = false;
+          for (let xx = x0 - 1; xx <= x0 + 0.3 * D; xx++) if (ink(xx, yy)) any = true;
+          if (any) hook++; else break;
+        }
+        if (hook < 0.8 * D) continue;
+        // The number just under the line near the left end.
+        const digit = comps.find(d => d && d.minX > x0 && d.minX < x0 + 2.5 * D && d.minY > y && d.minY < y + 1.5 * D && d.h >= 0.6 * D && d.h <= 2.2 * D && d.w < 1.5 * D);
+        // A beam's end stem looks like a hook too, but has no number and
+        // ends on a notehead.
+        if (!digit) continue;
+        const end = y + hook;
+        let head = 0;
+        for (let xx = Math.round(x0 - D); xx <= x0 + D; xx++) if (ink(xx, Math.round(end - 0.3 * D))) head++;
+        if (head > 0.8 * D) continue;
+        const num = readDigit(ctx, digit);
+        out.push({ x0, x1, y, number: num.err < 0.3 && num.digit > 0 ? num.digit : null });
+      }
+    }
+    out.sort((p, q) => p.x0 - q.x0);
+    dbg('voltas', staff.index, out.map(v => Math.round(v.x0) + '-' + Math.round(v.x1) + '#' + v.number).join(' '));
+    return out.map(v => ({ x0: v.x0, x1: v.x1, number: v.number }));
+  }
+
+
   // ---------- systems (grand staff) ----------
 
   // Staves joined by a brace, bracket or system barline at their left edge
@@ -1974,42 +2287,154 @@
     return systems;
   }
 
-  // Gives every event a start time in beats. Systems follow one another;
-  // the staves of one system play at the same time, kept in step bar by bar
-  // when they have the same number of bars.
-  function computeTimeline(result) {
-    let t = 0;
-    for (const sys of result.systems) {
-      const perStaff = sys.staves.map(idx => result.events.filter(e => e.staff === idx));
-      // Bar by bar when the staves show the same barlines (a bar one hand
-      // leaves empty, or a note we missed, then cannot shift the other hand).
-      const barCounts = sys.staves.map(idx => (result.staves[idx].bars || []).length);
-      const sameBars = barCounts.every(n => n === barCounts[0]);
-      if (sys.staves.length > 1 && sameBars) {
-        const ids = [...new Set(perStaff.flat().map(e => e.measure))].sort((a, b) => a - b);
-        for (const m of ids) {
-          let len = 0;
-          const lists = perStaff.map(evs => evs.filter(e => e.measure === m));
-          for (const list of lists) len = Math.max(len, list.reduce((a, e) => a + e.beats, 0));
-          for (const list of lists) {
-            let x = t;
-            for (const e of list) { e.start = x; x += e.beats; }
-          }
-          t += len;
-        }
-      } else {
-        let len = 0;
-        for (const evs of perStaff) {
-          let x = t;
-          for (const e of evs) { e.start = x; x += e.beats; }
-          len = Math.max(len, x - t);
-        }
-        t += len;
-      }
-      sys.start = sys.staves.length ? Math.min(...perStaff.flat().map(e => e.start).concat([t])) : t;
-      sys.end = t;
+  // The usual bar length: the most common total of a staff's bar.
+  function typicalBarLength(events) {
+    const sums = new Map();
+    for (const e of events) {
+      if (e.wholeRest) continue;
+      const key = e.staff + ':' + e.measure;
+      sums.set(key, (sums.get(key) || 0) + e.beats);
     }
+    const count = new Map();
+    for (const v of sums.values()) { const r = Math.round(v * 12) / 12; count.set(r, (count.get(r) || 0) + 1); }
+    let best = 4, n = 0;
+    for (const [len, c] of count) if (c > n || (c === n && len > best)) { best = len; n = c; }
+    return best;
+  }
+
+  // Gives every event its start times in beats (more than one when a
+  // repeat plays it again). The staves of a system play together, bar by
+  // bar. Inside a bar, a hand whose notes do not add up (a missed note or
+  // a misread value) is placed by where its notes stand on the page,
+  // against the hand that does add up, so the hands stay together.
+  function computeTimeline(result) {
+    const L = typicalBarLength(result.events);
+    const D = result.space || 20;
+    const near = (a, b) => Math.abs(a - b) < 1e-6;
+    const measures = [];
+    for (const sys of result.systems) {
+      const idxs = sys.staves;
+      const barsOf = idx => result.staves[idx].bars || [];
+      // The staff with the most barlines frames the bars; a barline missed
+      // on the other staff then does not shift that staff by a bar.
+      const ref = idxs.reduce((a, b) => (barsOf(b).length > barsOf(a).length ? b : a), idxs[0]);
+      const rb = barsOf(ref);
+      for (const idx of idxs) {
+        if (idx === ref || barsOf(idx).length === rb.length) continue;
+        for (const e of result.events) if (e.staff === idx) e.measure = rb.filter(x => x < e.x).length;
+      }
+      const measureAt = x => rb.filter(b => b < x).length;
+      const evs = result.events.filter(e => idxs.includes(e.staff));
+      const ids = [...new Set(evs.map(e => e.measure))].sort((a, b) => a - b);
+      const left = Math.min(...idxs.map(i => result.staves[i].headerEnd || result.staves[i].left));
+      const right = Math.max(...idxs.map(i => result.staves[i].right));
+      const sysMeasures = [];
+      for (const m of ids) {
+        const lists = idxs.map(idx => evs.filter(e => e.staff === idx && e.measure === m).sort((a, b) => a.x - b.x));
+        const sums = lists.map(l => l.reduce((a, e) => a + e.beats, 0));
+        const filled = lists.map((l, i) => i).filter(i => lists[i].length);
+        let len, refList = -1;
+        if (filled.every(i => near(sums[i], sums[filled[0]]))) { len = sums[filled[0]] || 0; refList = filled[0]; }
+        else {
+          refList = filled.find(i => near(sums[i], L));
+          if (refList === undefined) refList = -1;
+          if (refList < 0) {
+            // No hand adds up: a full bar still lasts the usual length
+            // (only a first bar may be a shorter pickup).
+            refList = filled.reduce((a, i) => (Math.abs(sums[i] - L) < Math.abs(sums[a] - L) ? i : a), filled[0]);
+            len = measures.length || sysMeasures.length ? L : Math.max(...sums);
+          } else len = L;
+        }
+        // Onsets from note values.
+        for (const l of lists) { let t = 0; for (const e of l) { e.off = t; t += e.beats; } }
+        // A hand that does not add up: place it by x against the other.
+        const x0 = m > 0 && rb[m - 1] != null ? rb[m - 1] : left, x1 = rb[m] != null ? rb[m] : right;
+        const pts = [[x0, 0]];
+        for (const e of lists[refList] || []) if (e.x > pts[pts.length - 1][0] + 1 && e.off > pts[pts.length - 1][1]) pts.push([e.x, e.off]);
+        if (x1 > pts[pts.length - 1][0]) pts.push([x1, len]);
+        const timeAt = x => {
+          if (x <= pts[0][0]) return 0;
+          for (let i = 1; i < pts.length; i++) if (x <= pts[i][0]) {
+            const [xa, ta] = pts[i - 1], [xb, tb] = pts[i];
+            return ta + (tb - ta) * (x - xa) / Math.max(1, xb - xa);
+          }
+          return pts[pts.length - 1][1];
+        };
+        lists.forEach((l, i) => {
+          if (i === refList || near(sums[i], len)) return;
+          let prev = -1;
+          for (const e of l) {
+            // Keep the written onset while it agrees with the page.
+            let t = timeAt(e.x - 0.3 * D);
+            if (Math.abs(e.off - t) <= 0.3) t = e.off;
+            else t = Math.abs(t - Math.round(t * 4) / 4) < 0.06 ? Math.round(t * 4) / 4 : Math.round(t * 12) / 12;
+            if (t <= prev) t = prev + 1 / 12;
+            e.off = Math.min(t, Math.max(0, len - 1 / 12));
+            prev = e.off;
+          }
+        });
+        sysMeasures.push({ m, len, events: lists.flat() });
+      }
+      // Repeat signs and first/second endings, read from the staves.
+      const marks = new Map();
+      const mark = (m, k, v) => { if (!marks.has(m)) marks.set(m, {}); marks.get(m)[k] = v; };
+      for (const idx of idxs) for (const r of result.staves[idx].repeats || []) mark(measureAt(r.x), r.type === 'start' ? 'startRepeat' : 'endRepeat', true);
+      const top = result.staves[idxs[0]];
+      for (const v of top.voltas || []) {
+        for (let m = measureAt(v.x0 + D); m <= measureAt(v.x1 - D); m++) mark(m, 'volta', v);
+      }
+      for (const sm of sysMeasures) Object.assign(sm, marks.get(sm.m) || {});
+      measures.push(...sysMeasures);
+      sys.measures = sysMeasures.length;
+    }
+    // Number the endings: as printed, else counting on from the last one.
+    let lastVolta = null, lastNumber = 0;
+    measures.forEach((g, i) => {
+      if (!g.volta) return;
+      if (g.volta !== lastVolta) {
+        const prev = i > 0 ? measures[i - 1] : null;
+        lastNumber = g.volta.number || (prev && prev.volta ? lastNumber + 1 : 1);
+        lastVolta = g.volta;
+      }
+      g.ending = lastNumber;
+    });
+    // A first ending runs on to its end repeat (its line may fade out).
+    for (let i = 0; i < measures.length; i++) {
+      if (measures[i].ending !== 1) continue;
+      let j = i;
+      while (j < measures.length && !measures[j].endRepeat && !measures[j].startRepeat && (!measures[j].ending || measures[j].ending === 1)) j++;
+      if (j < measures.length && measures[j].endRepeat && (!measures[j].ending || measures[j].ending === 1)) for (let k = i; k <= j; k++) measures[k].ending = 1;
+    }
+    // Endings mean nothing without a repeat (and a misread one must not
+    // skip bars).
+    if (!measures.some(g => g.endRepeat)) for (const g of measures) delete g.ending;
+    // Play order: back to the last start repeat (or the beginning) at an
+    // end repeat, once; on the way through again, take the next ending.
+    const order = [];
+    const done = new Set();
+    let i = 0, repStart = 0, pass = 1, back = -1;
+    while (i < measures.length && order.length < 4 * measures.length + 8) {
+      const g = measures[i];
+      if (g.startRepeat && i !== back) { repStart = i; pass = 1; }
+      back = -1;
+      if (g.ending && g.ending !== pass) { i++; continue; }
+      order.push(i);
+      if (g.endRepeat && !done.has(i)) { done.add(i); pass++; i = repStart; back = repStart; continue; }
+      i++;
+    }
+    for (const e of result.events) { e.starts = []; }
+    let t = 0;
+    for (const gi of order) {
+      const g = measures[gi];
+      for (const e of g.events) e.starts.push(t + e.off);
+      t += g.len;
+    }
+    for (const e of result.events) { e.start = e.starts.length ? e.starts[0] : 0; delete e.off; }
     result.totalBeats = t;
+    result.barLength = L;
+    result.measures = measures.length;
+    result.playOrder = order.map(gi => gi + 1);
+    result.repeats = measures.some(g => g.startRepeat || g.endRepeat || g.ending);
     for (const e of result.events) {
       const st = result.staves[e.staff];
       e.hand = st ? st.hand : null;
