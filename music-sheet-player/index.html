@@ -157,6 +157,7 @@
     </div>
     <div class="canvas-box" id="canvasBox" hidden><canvas id="canvas"></canvas></div>
     <div class="status" id="status" role="status"></div>
+    <div class="status" id="engineNote" hidden>AI reader on: each score is also read by homr on your own computer.</div>
   </div>
 
   <div id="resultArea" hidden>
@@ -170,7 +171,7 @@
   <ul class="help">
     <li>Reads printed staves: treble or bass clef, key and time signatures, whole to sixteenth notes, dots, accidentals, rests and simple chords. Piano music (treble and bass staves joined by a brace) plays both hands together.</li>
     <li>Shoot straight at the page with the staves level and filling the frame, in even light without shadows.</li>
-    <li>Not yet supported: handwritten music, two melodies on one staff, ties and triplets.</li>
+    <li>Not yet supported in the browser: handwritten music, two melodies on one staff, ties and triplets. With the AI reader on your own computer, ties, triplets and two voices are read too.</li>
   </ul>
 
   <footer>Piano sound: Salamander Grand Piano by Alexander Holm, CC BY 3.0. Recognition runs entirely in your browser; images are never uploaded. Build eada8515.</footer>
@@ -319,7 +320,93 @@
       $('handSel').hidden = !hasHands();
       renderResult();
       draw();
+      if (server.ok && res.staves.length) askServer(res);
     }, 30);
+  }
+
+  // ---------- recognition server (homr on your own computer) ----------
+
+  // When the page is served by server/server.py, the AI reader (homr) runs
+  // there. The in-browser result shows at once and stays as the fallback.
+  const server = { ok: false, key: '' };
+
+  async function detectServer() {
+    try {
+      const m = location.hash.match(/key=([\w-]+)/);
+      if (m) {
+        try { localStorage.setItem('scorelensKey', m[1]); } catch (e) {}
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+      try { server.key = (m && m[1]) || localStorage.getItem('scorelensKey') || ''; } catch (e) { server.key = m ? m[1] : ''; }
+      if (!/^https?:$/.test(location.protocol)) return;
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 4000);
+      const r = await fetch('api/health', { headers: { 'X-ScoreLens-Key': server.key }, signal: ctl.signal });
+      clearTimeout(timer);
+      if (r.status === 401) { setStatus('The recognition server needs its key: open the link with #key=… once.', true); return; }
+      const j = await r.json();
+      server.ok = !!j.ok;
+      if (server.ok) $('engineNote').hidden = false;
+    } catch (e) { server.ok = false; }
+  }
+
+  async function askServer(local) {
+    const asked = image;
+    const req = (server.req = {});
+    setStatus($('status').textContent + ' Reading again with the AI reader on your computer…');
+    try {
+      const blob = await new Promise(res => image.toBlob(res, 'image/jpeg', 0.92));
+      const r = await fetch('api/recognize', { method: 'POST', headers: { 'X-ScoreLens-Key': server.key, 'Content-Type': 'image/jpeg' }, body: blob });
+      const srv = await r.json();
+      if (server.req !== req || image !== asked) return; // a newer image came in
+      if (!r.ok || !srv.ok) throw new Error(srv.error || r.statusText);
+      const notes = srv.events.filter(e => e.type === 'note').length;
+      if (!notes) throw new Error('no notes');
+      stop();
+      result = mergeServerResult(local, srv);
+      $('handSel').hidden = !hasHands();
+      $('playBtn').disabled = false;
+      renderResult();
+      draw();
+      setStatus(`Done with the AI reader (homr): ${notes} notes, in ${srv.seconds} s.`);
+    } catch (e) {
+      if (server.req !== req) return;
+      setStatus('Done in the browser. (The AI reader could not read it: ' + (e.message || e) + ')');
+    }
+  }
+
+  // The server's notes, drawn over the staves the browser found. Everything
+  // is put in image coordinates; each note goes to the nearest staff of its hand.
+  function mergeServerResult(local, srv) {
+    const res = Object.assign({}, srv);
+    res.tempo = srv.tempo || local.tempo || null;
+    res.toImage = (x, y) => ({ x, y });
+    res.scale = 1;
+    res.space = local.space / (local.scale || 1);
+    if (local.staves.length && local.toImage) {
+      res.staves = local.staves.map(s => {
+        const a = local.toImage(s.left, s.lines[0][0]), b = local.toImage(s.right, s.lines[0][1]);
+        return Object.assign({}, s, {
+          left: a.x, right: b.x,
+          lines: s.lines.map(([yl, yr]) => [local.toImage(s.left, yl).y, local.toImage(s.right, yr).y])
+        });
+      });
+      res.systems = local.systems;
+      const mid = (s, x) => { const t = (x - s.left) / Math.max(1, s.right - s.left); return (s.lines[2][0] * (1 - t) + s.lines[2][1] * t); };
+      for (const ev of res.events) {
+        if (ev.y == null) { ev.staff = res.staves.findIndex(s => s.hand === ev.hand); if (ev.staff < 0) ev.staff = 0; continue; }
+        let best = -1, bestD = Infinity;
+        res.staves.forEach((s, i) => {
+          if (ev.hand && s.hand && s.hand !== ev.hand) return;
+          const d = Math.abs(mid(s, ev.x) - ev.y);
+          if (d < bestD) { bestD = d; best = i; }
+        });
+        if (best >= 0) ev.staff = best;
+      }
+      // Notes listed staff by staff in reading order.
+      res.events = res.events.slice().sort((a, b) => (a.staff - b.staff) || (a.start - b.start));
+    }
+    return res;
   }
 
   // A manual clef choice re-spells every note on the staff from its line position.
@@ -385,6 +472,7 @@
       ['Clef', hasHands() ? 'Treble + bass (piano, both hands)' : clefs.join(' + ')],
       ['Key', keyText(s0.key)],
       ['Time', time === 'C' ? 'C (4/4)' : time ? 'Detected (plays written note values)' : 'Not marked'],
+      ...(server.ok ? [['Reader', result.engine === 'homr' ? 'AI reader (homr)' : 'In the browser']] : []),
       ['Tempo', result.tempo ? `♩ = ${result.tempo.bpm} (from the score)` : `Not marked (♩ = ${DEFAULT_TEMPO})`],
       ...(result.repeats ? [['Repeats', 'Plays bars ' + spans(result.playOrder)]] : []),
       ['Notes', String(noteEvents.length)],
@@ -470,7 +558,7 @@
     g.lineWidth = Math.max(1, D * 0.08);
     g.strokeStyle = staffColor;
     for (const s of r.staves) {
-      for (const [yl, yr] of s.lines) {
+      for (const [yl, yr] of s.lines || []) {
         const a = r.toImage(s.left, yl), b = r.toImage(s.right, yr);
         g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
       }
@@ -483,6 +571,7 @@
       const col = on ? playColor : headColor;
       if (ev.type === 'note') {
         for (const p of ev.pitches) {
+          if (p.x == null) continue;
           const c = r.toImage(p.x, p.y);
           g.lineWidth = Math.max(1.5, D * (on ? 0.22 : 0.12));
           g.strokeStyle = col;
@@ -490,11 +579,13 @@
           if (on) { g.fillStyle = playColor + '33'; g.fill(); }
         }
         const s = r.staves[ev.staff];
-        const yBottom = s ? Math.max(s.lines[4][0], s.lines[4][1]) : ev.y;
+        if (ev.x == null) return;
+        const yBottom = s && s.lines ? Math.max(s.lines[4][0], s.lines[4][1]) : ev.y;
         const lowest = Math.max(yBottom, ...ev.pitches.map(p => p.y));
         const t = r.toImage(ev.x, lowest + r.space * 2.4);
         drawLabel(prettyName(ev.pitches[ev.pitches.length - 1].name), t.x, t.y, col, font, on);
       } else {
+        if (ev.x == null) return;
         const c = r.toImage(ev.x, ev.y);
         g.setLineDash([D * 0.3, D * 0.25]);
         g.lineWidth = Math.max(1, D * 0.1);
@@ -640,6 +731,7 @@
     try { showImage(await imageToCanvas(file)); }
     catch (e) { setStatus('Could not load the demo score.', true); }
   }
+  detectServer();
   $('demoBtn').addEventListener('click', () => openDemo('demo.png'));
   $('pianoDemoBtn').addEventListener('click', () => openDemo('demo-piano.png'));
   $('handSel').addEventListener('change', () => { if (playing) { stop(); play(); } });
