@@ -392,7 +392,7 @@
       $('playBtn').disabled = false;
       renderResult();
       draw();
-      setStatus(`Done with the AI reader (homr): ${notes} notes, in ${((performance.now() - p.t0) / 1000).toFixed(1)} s.`);
+      setStatus(`Done with the AI reader (homr): ${notes} notes, in ${((performance.now() - p.t0) / 1000).toFixed(1)} s (reading on the computer: ${srv.seconds} s).`);
     } catch (e) {
       if (server.req !== p.req) return;
       setStatus(base + ' (The AI reader could not read it: ' + (e.message || e) + ')');
