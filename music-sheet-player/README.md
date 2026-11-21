@@ -56,6 +56,8 @@ On every piano test image the two staves were paired into the right systems.
 
 `server/` runs [homr](https://github.com/liebharc/homr), a deep-learning sheet music reader, on a computer you keep on (e.g. a Mac mini) and serves the app from there. The app shows its own in-browser reading at once, then replaces it with homr's reading (about 10–30 s a page). If the server can't read a page, the in-browser result stays.
 
+homr's notes are then put back on the staves and barlines the browser found (`OMR.mergeExternal` in `omr.js`), bar by bar, so a note or a bar homr drops can't shift one hand against the other. Where its notes line up with the browser's, they take the browser's (more exact) places; a bar of homr's that doesn't add up takes the browser's reading of that bar, spelled with homr's clef and key.
+
 Measured on the same pages (notes and rests right, both hands):
 
 | Pages | In the browser | homr |

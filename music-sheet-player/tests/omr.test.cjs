@@ -131,3 +131,45 @@ test('single-line music is not paired into piano systems', () => {
   let prev = -1;
   for (const e of res.events) { assert.ok(e.start >= prev); prev = e.start; }
 });
+
+// The AI reader's notes are put on the page's own barlines: a bar it ran
+// short (a dropped note) takes the page's reading, and the hands stay together.
+test('a second reader missing a note keeps the hands together', () => {
+  const staff = (index, top, clef, hand) => ({
+    index, left: 0, right: 400, headerEnd: 0, clef, hand, key: { type: null, count: 0 }, time: '4/4',
+    lines: [0, 1, 2, 3, 4].map(i => [top + 20 * i, top + 20 * i]), bars: [100, 200, 300, 400], repeats: [], voltas: []
+  });
+  const half = (staffIdx, x, k, midi) => ({
+    type: 'note', beats: 2, base: 2, staff: staffIdx, x, y: 0,
+    pitches: [{ midi, name: OMR.noteName(midi), x, y: 0, k }], midi, name: OMR.noteName(midi)
+  });
+  // Page reading: four bars of two half notes in each hand.
+  const local = {
+    staves: [staff(0, 0, 'treble', 'right'), staff(1, 200, 'bass', 'left')],
+    systems: [{ staves: [0, 1] }], space: 20, scale: 1, tempo: null,
+    toImage: (x, y) => ({ x, y }), fromImage: (x, y) => ({ x, y }), events: []
+  };
+  for (let b = 0; b < 4; b++) {
+    local.events.push(half(0, b * 100 + 30, 4, 71), half(0, b * 100 + 70, 3, 72));
+    local.events.push(half(1, b * 100 + 30, 4, 50), half(1, b * 100 + 70, 4, 50));
+  }
+  for (const e of local.events) e.y = e.pitches[0].y = local.staves[e.staff].lines[2][0];
+  // Second reader: same notes, but the right hand's bar 2 lost its second note.
+  const ext = { engine: 'homr', staves: [{ hand: 'right', clef: 'treble', key: { type: 'sharp', count: 2 } }, { hand: 'left', clef: 'bass', key: { type: 'sharp', count: 2 } }], events: [] };
+  for (const e of local.events) {
+    const hand = e.staff === 0 ? 'right' : 'left';
+    if (hand === 'right' && e.x === 170) continue;
+    const m = Math.floor(e.x / 100), start = m * 4 + (e.x % 100 > 50 ? 2 : 0);
+    ext.events.push({ type: 'note', beats: 2, hand, measure: m, x: e.x + 3, y: e.y, start, starts: [start],
+      pitches: e.pitches.map(p => Object.assign({}, p, { midi: p.midi + 1, x: p.x + 3 })) });
+  }
+  const res = OMR.mergeExternal(local, ext);
+  assert.ok(res);
+  assert.strictEqual(res.measures, 4);
+  assert.strictEqual(res.filledBars, 1);
+  const rh = res.events.filter(e => e.hand === 'right'), lh = res.events.filter(e => e.hand === 'left');
+  assert.deepStrictEqual(rh.map(e => e.start), [0, 2, 4, 6, 8, 10, 12, 14]);
+  assert.deepStrictEqual(lh.map(e => e.start), [0, 2, 4, 6, 8, 10, 12, 14]);
+  // The filled note is spelled with the second reader's key (C sharp).
+  assert.strictEqual(rh[3].midi, 73);
+});

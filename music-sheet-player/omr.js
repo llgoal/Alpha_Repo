@@ -429,6 +429,13 @@
       const ry = Math.sin(a) * dx + Math.cos(a) * dy + cy;
       return { x: rx / scale, y: ry / scale };
     };
+    // And from the input image into the page's working coordinates.
+    result.fromImage = (x, y) => {
+      const cx = w / 2, cy = h / 2;
+      const a = skew * Math.PI / 180;
+      const dx = x * scale - cx, dy = y * scale - cy;
+      return { x: Math.cos(a) * dx + Math.sin(a) * dy + cx, y: -Math.sin(a) * dx + Math.cos(a) * dy + cy };
+    };
     return result;
   }
 
@@ -2293,7 +2300,8 @@
     for (const e of events) {
       if (e.wholeRest) continue;
       const key = e.staff + ':' + e.measure;
-      sums.set(key, (sums.get(key) || 0) + e.beats);
+      const v = e.at != null ? Math.max(sums.get(key) || 0, e.at + e.beats) : (sums.get(key) || 0) + e.beats;
+      sums.set(key, v);
     }
     const count = new Map();
     for (const v of sums.values()) { const r = Math.round(v * 12) / 12; count.set(r, (count.get(r) || 0) + 1); }
@@ -2331,7 +2339,10 @@
       const sysMeasures = [];
       for (const m of ids) {
         const lists = idxs.map(idx => evs.filter(e => e.staff === idx && e.measure === m).sort((a, b) => a.x - b.x));
-        const sums = lists.map(l => l.reduce((a, e) => a + e.beats, 0));
+        // A list whose places in the bar are already known (from the other
+        // reader) lasts to its last end; otherwise its values add up.
+        const timed = l => l.length && l.every(e => e.at != null);
+        const sums = lists.map(l => (timed(l) ? Math.max(...l.map(e => e.at + e.beats)) : l.reduce((a, e) => a + e.beats, 0)));
         const filled = lists.map((l, i) => i).filter(i => lists[i].length);
         let len, refList = -1;
         if (filled.every(i => near(sums[i], sums[filled[0]]))) { len = sums[filled[0]] || 0; refList = filled[0]; }
@@ -2346,7 +2357,10 @@
           } else len = L;
         }
         // Onsets from note values.
-        for (const l of lists) { let t = 0; for (const e of l) { e.off = t; t += e.beats; } }
+        for (const l of lists) {
+          if (timed(l)) { for (const e of l) e.off = e.at; l.sort((a, b) => a.off - b.off || a.x - b.x); continue; }
+          let t = 0; for (const e of l) { e.off = t; t += e.beats; }
+        }
         // A hand that does not add up: place it by x against the other.
         const x0 = m > 0 && rb[m - 1] != null ? rb[m - 1] : left, x1 = rb[m] != null ? rb[m] : right;
         const pts = [[x0, 0]];
@@ -2429,7 +2443,7 @@
       for (const e of g.events) e.starts.push(t + e.off);
       t += g.len;
     }
-    for (const e of result.events) { e.start = e.starts.length ? e.starts[0] : 0; delete e.off; }
+    for (const e of result.events) { e.start = e.starts.length ? e.starts[0] : 0; delete e.off; delete e.at; }
     result.totalBeats = t;
     result.barLength = L;
     result.measures = measures.length;
@@ -2509,7 +2523,243 @@
     };
   }
 
-  const api = { recognize, rgbaToGray, noteName };
+  // ---------- a second reader's notes on this page's staves ----------
+
+  // Another reader (homr on the user's computer) sends its notes with their
+  // places on the image. It reads notes better, but it can drop a note or
+  // run two bars together, and then a hand shifts by a bar. So its notes
+  // are put back on the staves and barlines this page found, bar by bar.
+  // A bar of it that does not add up takes the notes this page read there
+  // (spelled with the other reader's clef and key). Returns null when the
+  // staves found here do not fit its notes.
+  // Lines up two readings of one staff in reading order (as in aligning
+  // two texts): a pair costs its distance apart and how much its pitches
+  // differ, a note in one reading only costs a fixed amount. The events of
+  // the first reading that pair up move to their partner's place.
+  function alignByPlace(a, b, D) {
+    const n = a.length, m = b.length;
+    if (!n || !m) return;
+    const GAP = 1.2;
+    const set = e => new Set(e.type === 'note' ? (e.pitches || []).map(q => q.midi % 12) : ['r']);
+    const sa = a.map(set), sb = b.map(set);
+    const pair = (i, j) => {
+      const dx = Math.abs(a[i].x - b[j].x) / D;
+      if (dx > 3.5) return Infinity;
+      let common = 0;
+      for (const v of sa[i]) if (sb[j].has(v)) common++;
+      const union = sa[i].size + sb[j].size - common;
+      return 0.25 * dx + (1 - common / Math.max(1, union));
+    };
+    const cost = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+    const move = Array.from({ length: n + 1 }, () => new Uint8Array(m + 1));
+    for (let i = 1; i <= n; i++) { cost[i][0] = i * GAP; move[i][0] = 1; }
+    for (let j = 1; j <= m; j++) { cost[0][j] = j * GAP; move[0][j] = 2; }
+    for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) {
+      let c = cost[i - 1][j - 1] + pair(i - 1, j - 1), mv = 0;
+      if (cost[i - 1][j] + GAP < c) { c = cost[i - 1][j] + GAP; mv = 1; }
+      if (cost[i][j - 1] + GAP < c) { c = cost[i][j - 1] + GAP; mv = 2; }
+      cost[i][j] = c; move[i][j] = mv;
+    }
+    for (let i = n, j = m; i > 0 && j > 0;) {
+      const mv = move[i][j];
+      if (mv === 0) {
+        const e = a[i - 1], dx = b[j - 1].x - e.x;
+        e.x += dx;
+        for (const q of e.pitches || []) if (q.x != null) q.x += dx;
+        i--; j--;
+      } else if (mv === 1) i--; else j--;
+    }
+  }
+
+  function mergeExternal(local, ext) {
+    if (!local || !local.staves.length || !local.fromImage || !ext || !ext.events) return null;
+    const D = local.space || 20;
+    const near = (a, b) => Math.abs(a - b) < 1e-6;
+    const extHand = h => (ext.staves || []).find(s => s.hand === h);
+    const piano = !!(extHand('right') && extHand('left'));
+    const staves = local.staves.map(s => Object.assign({}, s));
+    let systems = local.systems.map(sys => Object.assign({}, sys, { staves: sys.staves.slice() }));
+    if (piano) {
+      // Every system is a pair of staves; pair up any the page left single.
+      if (systems.some(sys => sys.staves.length !== 2)) {
+        if (staves.length % 2 || systems.some(sys => sys.staves.length > 2)) return null;
+        systems = [];
+        for (let i = 0; i < staves.length; i += 2) systems.push({ staves: [i, i + 1] });
+      }
+      for (const sys of systems) {
+        sys.staves.forEach((idx, part) => {
+          const st = staves[idx], hand = part === 0 ? 'right' : 'left', es = extHand(hand);
+          st.hand = hand;
+          if (es && CLEF_BOTTOM[es.clef] != null) st.clef = es.clef;
+          if (es && es.key) st.key = es.key;
+          if (es && es.time && !st.time) st.time = es.time;
+        });
+      }
+    } else if ((ext.staves || []).length === 1) {
+      const es = ext.staves[0];
+      for (const st of staves) {
+        if (CLEF_BOTTOM[es.clef] != null) st.clef = es.clef;
+        if (es.key) st.key = es.key;
+        if (es.time && !st.time) st.time = es.time;
+      }
+    }
+    const sysOf = new Map();
+    systems.forEach(sys => sys.staves.forEach(i => sysOf.set(i, sys)));
+    // The barlines of a system: those of its staff with the most.
+    const barsOf = idx => {
+      const sys = sysOf.get(idx);
+      const ids = sys ? sys.staves : [idx];
+      return ids.map(i => staves[i].bars || []).reduce((a, b) => (b.length > a.length ? b : a), []);
+    };
+    const measureAt = (idx, x) => barsOf(idx).filter(b => b < x).length;
+    const mid = (s, x) => {
+      const t = (x - s.left) / Math.max(1, s.right - s.left);
+      return s.lines[2][0] * (1 - t) + s.lines[2][1] * t;
+    };
+
+    // The other reader's notes, in this page's coordinates, on the nearest
+    // staff of their hand.
+    const H = [];
+    let lost = 0, notes = 0;
+    for (const e0 of ext.events) {
+      if (e0.type === 'note') notes++;
+      if (e0.x == null || e0.y == null) { lost++; continue; }
+      const e = Object.assign({}, e0);
+      const p = local.fromImage(e0.x, e0.y);
+      e.x = p.x; e.y = p.y;
+      e.pitches = (e0.pitches || []).map(q => {
+        const c = q.x != null ? local.fromImage(q.x, q.y) : p;
+        return Object.assign({}, q, { x: c.x, y: c.y });
+      });
+      let best = -1, bestD = Infinity;
+      staves.forEach((s, i) => {
+        if (e.hand && s.hand && s.hand !== e.hand) return;
+        const d = Math.abs(mid(s, e.x) - e.y);
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      if (best < 0 || bestD > 9 * D) { lost++; continue; }
+      // A note head far off its staff is a misreading.
+      if (e.type === 'note' && e.pitches.length > 1) {
+        const kept = e.pitches.filter(q => Math.abs(mid(staves[best], q.x) - q.y) < 8 * D);
+        if (kept.length && kept.length < e.pitches.length) {
+          e.pitches = kept;
+          e.midi = kept[0].midi;
+          e.name = kept.map(q => q.name).join('+');
+        }
+      }
+      e.staff = best;
+      e.extMeasure = e0.measure;
+      e.extStart = e0.start;
+      delete e.starts; delete e.start;
+      H.push(e);
+    }
+    if (lost > Math.max(2, 0.03 * ext.events.length) || !notes) return null;
+
+    // This page's own notes, spelled with the other reader's clef and key.
+    const LO = [];
+    const bySt = new Map();
+    for (const e0 of local.events) {
+      if (!staves[e0.staff]) continue;
+      const e = Object.assign({}, e0, { pitches: (e0.pitches || []).map(q => Object.assign({}, q)) });
+      e.measure = measureAt(e.staff, e.x);
+      delete e.starts; delete e.start;
+      if (!bySt.has(e.staff)) bySt.set(e.staff, []);
+      bySt.get(e.staff).push(e);
+      LO.push(e);
+    }
+    for (const [idx, list] of bySt) {
+      const st = staves[idx];
+      const bottom = CLEF_BOTTOM[st.clef];
+      if (bottom == null) continue;
+      const keyAlter = new Array(7).fill(0);
+      if (st.key && st.key.type === 'sharp') for (let i = 0; i < st.key.count; i++) keyAlter[SHARP_ORDER[i]] = 1;
+      if (st.key && st.key.type === 'flat') for (let i = 0; i < st.key.count; i++) keyAlter[FLAT_ORDER[i]] = -1;
+      list.sort((a, b) => a.x - b.x);
+      let m = -1, acc = new Map();
+      for (const e of list) {
+        if (e.measure !== m) { m = e.measure; acc = new Map(); }
+        if (e.type !== 'note') continue;
+        for (const q of e.pitches) {
+          if (q.k == null) continue;
+          const d = bottom + (8 - q.k);
+          let alter;
+          if (q.accidental) { alter = q.accidental === 'sharp' ? 1 : q.accidental === 'flat' ? -1 : 0; acc.set(d, alter); }
+          else alter = acc.has(d) ? acc.get(d) : keyAlter[((d % 7) + 7) % 7];
+          q.midi = diatonicToMidi(d, alter);
+          q.name = noteName(q.midi);
+        }
+        e.midi = e.pitches[0].midi;
+        e.name = e.pitches.map(q => q.name).join('+');
+      }
+    }
+
+    // Its positions can be off by a note's width or more, enough to cross
+    // a barline. Where its notes line up with the notes read here, they
+    // take the places read here.
+    for (let idx = 0; idx < staves.length; idx++) {
+      const hs = H.filter(e => e.staff === idx).sort((a, b) => a.x - b.x);
+      const ls = LO.filter(e => e.staff === idx).sort((a, b) => a.x - b.x);
+      alignByPlace(hs, ls, D);
+    }
+    for (const e of H) e.measure = measureAt(e.staff, e.x);
+
+    // Bar by bar: the other reader's notes, unless they do not add up and
+    // this page's reading of the bar does (or the two together do).
+    // Where its notes fall in its own bars (this keeps its voices and
+    // chords); used for a bar of ours made of one whole bar of its.
+    const extBarStart = new Map();
+    for (const e of H) if (e.extStart != null) extBarStart.set(e.extMeasure, Math.min(extBarStart.has(e.extMeasure) ? extBarStart.get(e.extMeasure) : Infinity, e.extStart));
+    const L = typicalBarLength(H);
+    const groups = new Map();
+    const group = key => { if (!groups.has(key)) groups.set(key, { h: [], lo: [] }); return groups.get(key); };
+    for (const e of H) group(e.staff + ':' + e.measure).h.push(e);
+    for (const e of LO) group(e.staff + ':' + e.measure).lo.push(e);
+    const timed = l => l.length && l.every(e => e.at != null);
+    const sum = l => (timed(l) ? Math.max(...l.map(e => e.at + e.beats)) : l.reduce((a, e) => a + (e.wholeRest ? L : e.beats), 0));
+    for (const g of groups.values()) {
+      const ms = new Set(g.h.map(e => e.extMeasure));
+      if (g.h.length < 2 || ms.size !== 1) continue;
+      const m = g.h[0].extMeasure;
+      const whole = H.filter(e => e.extMeasure === m && e.staff === g.h[0].staff).length === g.h.length;
+      if (whole && extBarStart.has(m) && g.h.every(e => e.extStart != null)) for (const e of g.h) e.at = Math.round((e.extStart - extBarStart.get(m)) * 48) / 48;
+    }
+    const events = [];
+    let filled = 0;
+    for (const g of groups.values()) {
+      const { h, lo } = g;
+      // A rest alone in its bar fills the bar.
+      if (h.length === 1 && h[0].type === 'rest' && !near(h[0].beats, L)) h[0].beats = L;
+      let pick = h;
+      if (!near(sum(h), L)) {
+        const extra = lo.filter(e => !h.some(f => Math.abs(f.x - e.x) < 0.8 * D));
+        const both = h.concat(extra);
+        if (extra.length && near(sum(both), L)) pick = both;
+        else if (lo.length && near(sum(lo), L)) pick = lo;
+        else if (!h.length) pick = lo;
+        if (pick !== h) filled++;
+      }
+      for (const e of pick) {
+        if (e.wholeRest) e.beats = L;
+        if (pick !== h) delete e.at;
+        events.push(e);
+      }
+    }
+    const result = {
+      engine: ext.engine || 'external',
+      staves, systems, events,
+      space: local.space, scale: local.scale,
+      toImage: local.toImage, fromImage: local.fromImage,
+      tempo: ext.tempo || local.tempo || null,
+      warnings: (ext.warnings || []).slice(),
+      filledBars: filled
+    };
+    computeTimeline(result);
+    for (const e of events) { delete e.extMeasure; delete e.extStart; }
+    result.events.sort((a, b) => (a.staff - b.staff) || (a.start - b.start) || (a.x - b.x));
+    return result;
+  }
+
+  const api = { recognize, rgbaToGray, noteName, mergeExternal };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.OMR = api;
 })(typeof window !== 'undefined' ? window : this);

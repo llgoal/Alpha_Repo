@@ -174,12 +174,12 @@
     <li>Not yet supported in the browser: handwritten music, two melodies on one staff, ties and triplets. With the AI reader on your own computer, ties, triplets and two voices are read too.</li>
   </ul>
 
-  <footer>Piano sound: Salamander Grand Piano by Alexander Holm, CC BY 3.0. Recognition runs entirely in your browser; images are never uploaded. Build eada8515.</footer>
+  <footer>Piano sound: Salamander Grand Piano by Alexander Holm, CC BY 3.0. Recognition runs in your browser, and on your own computer when the AI reader is on; images go nowhere else. Build 216b9e0b.</footer>
 </div>
 
 <script src="piano-samples.js"></script>
 <script src="player.js?v=ced1527d"></script>
-<script src="omr.js?v=ced1527d"></script>
+<script src="omr.js?v=216b9e0b"></script>
 <script>
 (function () {
   'use strict';
@@ -379,28 +379,33 @@
     try {
       const srv = await p.answer;
       if (server.req !== p.req || image !== p.img) return; // a newer image came in
-      const notes = srv.events.filter(e => e.type === 'note').length;
-      if (!notes) throw new Error('no notes');
+      if (!srv.events.some(e => e.type === 'note')) throw new Error('no notes');
       // Positions back to this image's scale.
       if (p.f < 1) for (const ev of srv.events) {
         if (ev.x != null) { ev.x /= p.f; ev.y /= p.f; }
         for (const q of ev.pitches || []) if (q.x != null) { q.x /= p.f; q.y /= p.f; }
       }
       stop();
-      result = mergeServerResult(local, srv);
+      // Its notes go on the staves and barlines found here, bar by bar, so
+      // a note or bar it missed cannot shift one hand against the other.
+      const merged = OMR.mergeExternal ? OMR.mergeExternal(local, srv) : null;
+      result = merged || mergeServerResult(local, srv);
+      const notes = result.events.filter(e => e.type === 'note').length;
+      const fixed = merged && merged.filledBars ? ` ${merged.filledBars} bar${merged.filledBars > 1 ? 's' : ''} completed from this page's own reading.` : '';
       $('handSel').hidden = !hasHands();
       $('playBtn').disabled = false;
       renderResult();
       draw();
-      setStatus(`Done with the AI reader (homr): ${notes} notes, in ${((performance.now() - p.t0) / 1000).toFixed(1)} s (reading on the computer: ${srv.seconds} s).`);
+      setStatus(`Done with the AI reader (homr): ${notes} notes, in ${((performance.now() - p.t0) / 1000).toFixed(1)} s (reading on the computer: ${srv.seconds} s).${fixed}`);
     } catch (e) {
       if (server.req !== p.req) return;
       setStatus(base + ' (The AI reader could not read it: ' + (e.message || e) + ')');
     }
   }
 
-  // The server's notes, drawn over the staves the browser found. Everything
-  // is put in image coordinates; each note goes to the nearest staff of its hand.
+  // Fallback when the staves found here do not fit the server's notes: its
+  // own timing, drawn over those staves. Everything is put in image
+  // coordinates; each note goes to the nearest staff of its hand.
   function mergeServerResult(local, srv) {
     const res = Object.assign({}, srv);
     res.tempo = srv.tempo || local.tempo || null;
