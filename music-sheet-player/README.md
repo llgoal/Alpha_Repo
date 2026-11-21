@@ -73,7 +73,7 @@ Install on a Mac (needs Python 3.11+, e.g. `brew install python@3.12`):
 bash music-sheet-player/server/install-mac.sh
 ```
 
-It installs homr into `~/.scorelens/venv`, starts the server on port 8765 at every login, checks GitHub every 10 minutes for new commits of the checked-out branch (fast-forward only, restarting the server when its files changed; log in `~/.scorelens/update.log`), and prints the link to open (with `#key=…`, which the app remembers; the API refuses requests without the key). On the home network use `http://<mac-name>.local:8765/`. To reach it from anywhere, install Tailscale and run `tailscale funnel --bg 8765` (in the Mac App Store version the command is `/Applications/Tailscale.app/Contents/MacOS/Tailscale`).
+It installs homr into `~/.scorelens/venv`, starts the server on port 8765 at every login, (with `AUTO_UPDATE=1` in front, it also checks GitHub every 10 minutes for new commits of the checked-out branch, fast-forward only, restarting the server when its files changed; log in `~/.scorelens/update.log`), and prints the link to open (with `#key=…`, which the app remembers; the API refuses requests without the key). On the home network use `http://<mac-name>.local:8765/`. To reach it from anywhere, install Tailscale and run `tailscale funnel --bg 8765` (in the Mac App Store version the command is `/Applications/Tailscale.app/Contents/MacOS/Tailscale`).
 
 - `server/server.py` – static files plus `POST /api/recognize` (image in, result JSON out) and `GET /api/health`; one page at a time.
 - `server/musicxml_events.py` – homr's MusicXML to the app's result shape: hands, chords, ties, repeats and endings, note positions on the image. Tests: `python3 -m unittest discover music-sheet-player/server/tests`.
