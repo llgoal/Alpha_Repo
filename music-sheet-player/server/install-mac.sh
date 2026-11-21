@@ -4,7 +4,8 @@
 #
 #   bash music-sheet-player/server/install-mac.sh
 #
-# Run it again after pulling new code to restart the server.
+# After that it updates itself: every 10 minutes it pulls new commits of
+# this branch and restarts the server when needed (auto-update.sh).
 set -euo pipefail
 
 APP="$(cd "$(dirname "$0")/.." && pwd)"
@@ -61,6 +62,28 @@ if ! launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
   launchctl kickstart -k "$SVC" 2>/dev/null || { echo "Could not start the server with launchctl. Try: launchctl kickstart -k $SVC"; exit 1; }
 fi
 
+# 4. Keep the code up to date: every 10 minutes, pull new commits of this
+#    branch (fast-forward only) and restart the server when it changed.
+UPLIST="$HOME/Library/LaunchAgents/com.scorelens.update.plist"
+cat > "$UPLIST" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.scorelens.update</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$APP/server/auto-update.sh</string></array>
+  <key>StartInterval</key><integer>600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$STATE/update.log</string>
+  <key>StandardErrorPath</key><string>$STATE/update.log</string>
+</dict></plist>
+PL
+if [ -z "${SCORELENS_FROM_UPDATE:-}" ]; then
+  USVC="gui/$(id -u)/com.scorelens.update"
+  launchctl bootout "$USVC" 2>/dev/null || true
+  for i in $(seq 1 20); do launchctl print "$USVC" >/dev/null 2>&1 || break; sleep 0.5; done
+  launchctl bootstrap "gui/$(id -u)" "$UPLIST" 2>/dev/null || echo "(Automatic updates could not be started; run this script again later.)"
+fi
+
 for i in $(seq 1 30); do
   if [ -f "$STATE/key" ] && curl -s -o /dev/null "http://localhost:$PORT/"; then break; fi
   sleep 1
@@ -80,4 +103,5 @@ if command -v tailscale >/dev/null 2>&1; then
   echo "    tailscale funnel --bg $PORT"
   echo "then open  https://<this-mac>.<your-tailnet>.ts.net/#key=$KEY"
 fi
+echo "Updates itself every 10 minutes from GitHub (log: $STATE/update.log)."
 echo "Logs: $STATE/server.log"
