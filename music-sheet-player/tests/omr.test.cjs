@@ -173,3 +173,26 @@ test('a second reader missing a note keeps the hands together', () => {
   // The filled note is spelled with the second reader's key (C sharp).
   assert.strictEqual(rh[3].midi, 73);
 });
+
+// The AI reader's own bars, repeats and endings are kept; a note value it
+// misread (a bar that doesn't add up in one hand) is put right.
+test('second reader: misread value fixed, repeats kept', () => {
+  const ev = (hand, measure, start, beats, midi) => ({ type: midi ? 'note' : 'rest', hand, staff: hand === 'right' ? 0 : 1, measure, start, starts: [start], beats,
+    pitches: midi ? [{ midi, name: OMR.noteName(midi) }] : undefined });
+  // 3/8 with a pickup: bar 0 = two sixteenths; bar 1 has six sixteenths but
+  // the first was read as an eighth; bar 2 is the end of a repeat.
+  const ext = { staves: [{ hand: 'right', time: '3/8' }, { hand: 'left', time: '3/8' }], playOrder: [1, 2, 3, 1, 2, 3], events: [
+    ev('right', 0, 0, 0.25, 76), ev('right', 0, 0.25, 0.25, 75), ev('left', 0, 0, 0.5),
+    ev('right', 1, 0.5, 0.5, 76), ev('right', 1, 1, 0.25, 75), ev('right', 1, 1.25, 0.25, 76), ev('right', 1, 1.5, 0.25, 71), ev('right', 1, 1.75, 0.25, 74), ev('right', 1, 2, 0.25, 72),
+    ev('left', 1, 0.5, 1.5),
+    ev('right', 2, 2.25, 0.5, 69), ev('right', 2, 2.75, 1, null), ev('left', 2, 2.25, 0.25, 45), ev('left', 2, 2.5, 0.25, 52), ev('left', 2, 2.75, 0.25, 57), ev('left', 2, 3, 0.75)
+  ] };
+  const res = OMR.repairExternal(ext);
+  assert.strictEqual(res.fixedValues, 1);
+  assert.strictEqual(res.events[3].beats, 0.25);
+  assert.ok(res.pickup);
+  assert.strictEqual(res.totalBeats, 2 * (0.5 + 1.5 + 1.5));
+  // The C after the fix ends bar 1 exactly; bar 2 starts at 2.0 and is played twice.
+  assert.deepStrictEqual(res.events[8].starts, [1.75, 5.25]);
+  assert.deepStrictEqual(res.events[10].starts, [2, 5.5]);
+});

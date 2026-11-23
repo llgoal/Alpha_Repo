@@ -161,6 +161,10 @@
       <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>
       <span id="playLabel">Play</span>
     </button>
+    <button class="btn" id="stopBtn" type="button" disabled aria-label="Stop and go back to the start">
+      <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+      Stop
+    </button>
   </div>
 
   <div class="card stage">
@@ -188,12 +192,12 @@
     <li>Not yet supported in the browser: handwritten music, two melodies on one staff, ties and triplets. With the AI reader on your own computer, ties, triplets and two voices are read too.</li>
   </ul>
 
-  <footer>Piano sound: Salamander Grand Piano by Alexander Holm, CC BY 3.0. Recognition runs in your browser, and on your own computer when the AI reader is on; images go nowhere else. Build 216b9e0b.</footer>
+  <footer>Piano sound: Salamander Grand Piano by Alexander Holm, CC BY 3.0. Recognition runs in your browser, and on your own computer when the AI reader is on; images go nowhere else. Build 4e76dec5.</footer>
 </div>
 
 <script src="piano-samples.js"></script>
-<script src="player.js?v=ad06d11c"></script>
-<script src="omr.js?v=216b9e0b"></script>
+<script src="player.js?v=8cbfc9e8"></script>
+<script src="omr.js?v=4e76dec5"></script>
 <script>
 (function () {
   'use strict';
@@ -208,6 +212,18 @@
   let image = null;    // canvas holding the source image
   let result = null;
   const DEFAULT_TEMPO = 96;
+  // With no tempo mark: in eighth-note time (3/8, 6/8…) the eighth is the
+  // beat, so a quarter-note speed of 96 would rush; use a calmer one.
+  function defaultTempo(res) {
+    const time = res && (res.staves || []).map(s => s.time).find(t => /^\d+\/\d+$/.test(t || ''));
+    if (time) return /\/8$/.test(time) ? 72 : DEFAULT_TEMPO;
+    return res && Math.abs((res.barLength || 0) - 1.5) < 1e-6 ? 72 : DEFAULT_TEMPO; // bars of 3/8
+  }
+  function applyTempo(res) {
+    const bpm = res.tempo && res.tempo.bpm ? Math.max(40, Math.min(220, res.tempo.bpm)) : defaultTempo(res);
+    $('tempo').value = bpm;
+    $('tempoOut').textContent = '♩ = ' + bpm;
+  }
   let playing = null;  // { startAt, schedule, raf }
   let current = new Set(); // indexes of events sounding now
 
@@ -321,6 +337,7 @@
   async function runRecognition() {
     if (!image) return;
     stop();
+    resetPause();
     const run = ++runId;
     server.req = null;
     result = null;
@@ -352,9 +369,7 @@
       }
       result = res;
       // The tempo printed on the score (♩ = 89), else the default.
-      const bpm = res.tempo && res.tempo.bpm ? Math.max(40, Math.min(220, res.tempo.bpm)) : DEFAULT_TEMPO;
-      $('tempo').value = bpm;
-      $('tempoOut').textContent = '♩ = ' + bpm;
+      applyTempo(res);
       const ms = Math.round(performance.now() - t0);
       const notes = res.events.filter(e => e.type === 'note').length;
       if (!res.staves.length) {
@@ -429,8 +444,7 @@
       const srv = await p.answer;
       if (server.req !== p.req || image !== p.img) return; // a newer image came in
       // Playing the first reading: carry on from the same beat with the new notes.
-      let resumeAt = null;
-      if (playing && playing.startAt != null && PianoPlayer.context) resumeAt = Math.max(0, (PianoPlayer.context.currentTime - playing.startAt) / secondsPerBeat());
+      const resumeAt = currentBeat();
       setBusy(null);
       if (!srv.events.some(e => e.type === 'note')) throw new Error('no notes');
       // Positions back to this image's scale.
@@ -439,18 +453,23 @@
         for (const q of ev.pitches || []) if (q.x != null) { q.x /= p.f; q.y /= p.f; }
       }
       stop();
-      // Its notes go on the staves and barlines found here, bar by bar, so
-      // a note or bar it missed cannot shift one hand against the other.
-      const merged = OMR.mergeExternal ? OMR.mergeExternal(local, srv) : null;
-      result = merged || mergeServerResult(local, srv);
+      // Usually its own bars, repeats and endings are right and are kept
+      // (with misread note values put right). When its hands drift into
+      // different bars of the page, its notes go on this page's barlines.
+      const shifted = OMR.externalShifted ? OMR.externalShifted(local, srv) : -1;
+      const merged = shifted >= 2 ? OMR.mergeExternal(local, srv) : null;
+      const own = merged ? null : (OMR.repairExternal ? OMR.repairExternal(srv) : srv);
+      result = merged || mergeServerResult(local, own);
+      if (resumeAt == null) applyTempo(result);
       const notes = result.events.filter(e => e.type === 'note').length;
-      const fixed = merged && merged.filledBars ? ` ${merged.filledBars} bar${merged.filledBars > 1 ? 's' : ''} completed from this page's own reading.` : '';
+      const nFix = merged ? merged.filledBars : own && own.fixedValues;
+      const fixed = nFix ? ` ${nFix} bar${nFix > 1 ? 's' : ''} put right.` : '';
       $('handSel').hidden = !hasHands();
       $('playBtn').disabled = false;
       renderResult();
       draw();
       setStatus(`Done with the AI reader (homr): ${notes} notes, in ${((performance.now() - p.t0) / 1000).toFixed(1)} s (reading on the computer: ${srv.seconds} s).${fixed}`);
-      if (resumeAt != null && resumeAt < result.totalBeats) play(resumeAt);
+      if (resumeAt != null && resumeAt < result.totalBeats) play(resumeAt, ", now with the AI reader's notes");
     } catch (e) {
       if (server.req !== p.req) return;
       setBusy(null);
@@ -470,7 +489,9 @@
     if (local.staves.length && local.toImage) {
       res.staves = local.staves.map(s => {
         const a = local.toImage(s.left, s.lines[0][0]), b = local.toImage(s.right, s.lines[0][1]);
-        return Object.assign({}, s, {
+        // Clef, key and time as the AI reader read them.
+        const es = (srv.staves || []).find(t => s.hand && t.hand === s.hand) || ((srv.staves || []).length === 1 ? srv.staves[0] : null);
+        return Object.assign({}, s, es ? { clef: es.clef || s.clef, key: es.key || s.key, time: es.time || s.time } : {}, {
           left: a.x, right: b.x,
           lines: s.lines.map(([yl, yr]) => [local.toImage(s.left, yl).y, local.toImage(s.right, yr).y])
         });
@@ -533,6 +554,8 @@
 
   // 1,2,3,4,5,6,3,4,7 -> "1–6, 3–4, 7"
   function spans(order) {
+    // A short first bar (a pickup) is bar 0, as printed scores count it.
+    if (result && result.pickup) order = order.map(n => n - 1);
     const out = [];
     for (let i = 0; i < order.length;) {
       let j = i;
@@ -555,9 +578,9 @@
     const facts = [
       ['Clef', hasHands() ? 'Treble + bass (piano, both hands)' : clefs.join(' + ')],
       ['Key', keyText(s0.key)],
-      ['Time', time === 'C' ? 'C (4/4)' : time ? 'Detected (plays written note values)' : 'Not marked'],
+      ['Time', time === 'C' ? 'C (4/4)' : /^\d+\/\d+$/.test(time || '') ? time + (result.pickup ? ', starts with a pickup' : '') : time ? 'Detected (plays written note values)' : 'Not marked'],
       ...(server.ok ? [['Reader', result.engine === 'homr' ? 'AI reader (homr)' : 'In the browser']] : []),
-      ['Tempo', result.tempo ? `♩ = ${result.tempo.bpm} (from the score)` : `Not marked (♩ = ${DEFAULT_TEMPO})`],
+      ['Tempo', result.tempo ? `♩ = ${result.tempo.bpm} (from the score)` : `Not marked (♩ = ${defaultTempo(result)})`],
       ...(result.repeats ? [['Repeats', 'Plays bars ' + spans(result.playOrder)]] : []),
       ['Notes', String(noteEvents.length)],
       ['Length', `${+totalBeats.toFixed(2)} beats`]
@@ -714,7 +737,7 @@
   function secondsPerBeat() { return 60 / Number($('tempo').value); }
 
   // fromBeat: carry on from there (used when a better reading comes in).
-  async function play(fromBeat = 0) {
+  async function play(fromBeat = 0, note = '') {
     if (!result) return;
     const events = result.events;
     const midis = events.filter(e => e.type === 'note' && wanted(e)).flatMap(e => e.pitches.map(p => p.midi));
@@ -761,7 +784,7 @@
     playing.startAt = startAt;
     playing.end = startAt + t;
     playing.schedule = schedule;
-    setStatus(fromBeat ? `Playing on with the AI reader's notes (♩ = ${$('tempo').value})` : `Playing (♩ = ${$('tempo').value})`);
+    setStatus(`Playing (♩ = ${$('tempo').value})${note}`);
     const tick = () => {
       if (playing !== request) return;
       const now = ctx.currentTime;
@@ -789,11 +812,27 @@
     setTimeout(() => { if (!playing && current.has(i)) setCurrent([]); }, dur * 1000 + 300);
   }
 
+  // Play / Pause / Resume on one button; Stop goes back to the start.
+  let pausedAt = null; // beat where playback was paused
   function setPlaying(on) {
     if (on) playing = playing || {};
-    $('playLabel').textContent = on ? 'Stop' : 'Play';
-    $('playIcon').innerHTML = on ? '<rect x="6" y="6" width="12" height="12" rx="1.5"/>' : '<path d="M7 4.5v15l13-7.5z"/>';
+    $('playLabel').textContent = on ? 'Pause' : pausedAt != null ? 'Resume' : 'Play';
+    $('playIcon').innerHTML = on ? '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>' : '<path d="M7 4.5v15l13-7.5z"/>';
+    $('stopBtn').disabled = !on && pausedAt == null;
   }
+  // The beat now sounding, or null when not playing.
+  function currentBeat() {
+    if (!playing || playing.startAt == null || !PianoPlayer.context) return null;
+    return Math.max(0, (PianoPlayer.context.currentTime - playing.startAt) / secondsPerBeat());
+  }
+  function pause() {
+    const beat = currentBeat();
+    stop();
+    pausedAt = beat;
+    setPlaying(false);
+    if (beat != null) setStatus('Paused. Press Resume to carry on, or Stop to go back to the start.');
+  }
+  function resetPause() { pausedAt = null; setPlaying(!!playing); }
 
   function stop() {
     if (playing && playing.raf) cancelAnimationFrame(playing.raf);
@@ -805,9 +844,13 @@
 
   // ---------- wiring ----------
 
-  $('playBtn').addEventListener('click', () => { if (playing) { stop(); setStatus('Stopped.'); } else play(); });
+  $('playBtn').addEventListener('click', () => {
+    if (playing) pause();
+    else { const from = pausedAt || 0; pausedAt = null; play(from); }
+  });
+  $('stopBtn').addEventListener('click', () => { stop(); resetPause(); setStatus('Stopped.'); });
   $('tempo').addEventListener('input', () => { $('tempoOut').textContent = '♩ = ' + $('tempo').value; });
-  $('tempo').addEventListener('change', () => { if (playing) { stop(); play(); } });
+  $('tempo').addEventListener('change', () => { if (playing) { const b = currentBeat(); stop(); play(b || 0); } });
   $('clefSel').addEventListener('change', runRecognition);
   $('fileInput').addEventListener('change', e => { openFile(e.target.files[0]); e.target.value = ''; });
   $('cameraInput').addEventListener('change', e => { openFile(e.target.files[0]); e.target.value = ''; });
@@ -822,7 +865,7 @@
   detectServer();
   $('demoBtn').addEventListener('click', () => openDemo('demo.png'));
   $('pianoDemoBtn').addEventListener('click', () => openDemo('demo-piano.png'));
-  $('handSel').addEventListener('change', () => { if (playing) { stop(); play(); } });
+  $('handSel').addEventListener('change', () => { if (playing) { const b = currentBeat(); stop(); play(b || 0); } });
 
   const stage = document.querySelector('.stage');
   stage.addEventListener('dragover', e => { e.preventDefault(); $('drop').classList.add('over'); });

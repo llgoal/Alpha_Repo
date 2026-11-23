@@ -420,6 +420,8 @@
     result.systems = findSystems(ctx, staves, result.staves);
     result.tempo = findTempo(ctx, staves[0]);
     computeTimeline(result);
+    // A time signature read as numbers must agree with the bars' contents.
+    for (const st of result.staves) if (/^\d+\/\d+$/.test(st.time || '') && Math.abs(timeToBeats(st.time) - result.barLength) > 1e-6) st.time = 'digits';
     // Map coordinates back to the input image.
     result.toImage = (x, y) => {
       const cx = w / 2, cy = h / 2;
@@ -1705,10 +1707,32 @@
       const group = cand.filter(c => c.minX >= gx0 && c.maxX <= gx1 && c.minY > top - 0.6 * D && c.maxY < bottom + 0.6 * D);
       for (const c of group) { c.role = 'time'; end = Math.max(end, c.maxX); }
       time = 'digits';
+      // Read the two numbers (3/8, 6/8, 2/4…) when they are clear.
+      const [u, l] = pairs[0];
+      const ru = readDigit(ctx, u), rl = readDigit(ctx, l);
+      dbg('time digits', JSON.stringify(ru), JSON.stringify(rl));
+      if (ru.err < 0.23 && rl.err < 0.23 && [2, 4, 8].includes(rl.digit) && [2, 3, 4, 6, 9].includes(ru.digit)) time = ru.digit + '/' + rl.digit;
     } else if (cand.some(c => Math.abs(c.minY - top) < 0.35 * D && Math.abs(c.maxY - bottom) < 0.35 * D && c.w > 0.8 * D && c.w < 2.6 * D && c.area < 0.75 * c.w * c.h)) {
       // Two digits touching each other form one component spanning the staff.
       const c = cand.find(c => Math.abs(c.minY - top) < 0.35 * D && Math.abs(c.maxY - bottom) < 0.35 * D && c.w > 0.8 * D && c.w < 2.6 * D && c.area < 0.75 * c.w * c.h);
       c.role = 'time'; end = Math.max(end, c.maxX); time = 'digits';
+      // Read its two halves: the upper and lower number.
+      const mid = (top + bottom) / 2;
+      const half = (y0, y1) => {
+        // Tighten each half to its own ink.
+        let x0 = Infinity, x1 = -Infinity, ya = Infinity, yb = -Infinity;
+        for (let y = Math.round(y0); y <= Math.round(y1); y++) for (let x = c.minX; x <= c.maxX; x++) {
+          if (ctx.labels[y * ctx.w + x] !== c.id) continue;
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x); ya = Math.min(ya, y); yb = Math.max(yb, y);
+        }
+        return x1 < x0 ? null : { id: c.id, minX: x0, maxX: x1, minY: ya, maxY: yb, w: x1 - x0 + 1, h: yb - ya + 1 };
+      };
+      const u = half(c.minY, mid - 0.12 * D), l = half(mid + 0.12 * D, c.maxY);
+      if (u && l) {
+        const ru = readDigit(ctx, u), rl = readDigit(ctx, l);
+        dbg('time digits (one blob)', JSON.stringify(ru), JSON.stringify(rl));
+        if (ru.err < 0.23 && rl.err < 0.23 && [2, 4, 8].includes(rl.digit) && [2, 3, 4, 6, 9].includes(ru.digit)) time = ru.digit + '/' + rl.digit;
+      }
     } else {
       const c = cand.find(c => c.h > 1.5 * D && c.h < 3.4 * D && c.w > 0.9 * D && c.w < 2.4 * D &&
         Math.abs((c.minY + c.maxY) / 2 - (top + bottom) / 2) < 0.5 * D &&
@@ -2446,6 +2470,7 @@
     for (const e of result.events) { e.start = e.starts.length ? e.starts[0] : 0; delete e.off; delete e.at; }
     result.totalBeats = t;
     result.barLength = L;
+    result.pickup = measures.length > 1 && measures[0].len < L - 1e-6;
     result.measures = measures.length;
     result.playOrder = order.map(gi => gi + 1);
     result.repeats = measures.some(g => g.startRepeat || g.endRepeat || g.ending);
@@ -2759,7 +2784,120 @@
     return result;
   }
 
-  const api = { recognize, rgbaToGray, noteName, mergeExternal };
+  // ---------- the second reader's own bars, checked and repaired ----------
+
+  // Bar length in beats (quarter notes) from a time signature like "3/8".
+  function timeToBeats(time) {
+    const m = /^(\d+)\/(\d+)$/.exec(time || '');
+    if (time === 'C') return 4;
+    if (time === 'C|') return 4;
+    return m ? Number(m[1]) * 4 / Number(m[2]) : null;
+  }
+
+  // Does the other reader keep both hands in the same bar of the page? Its
+  // notes are put on the barlines found here; a bar of its whose hands land
+  // in different bars of the page means it ran bars together or dropped one
+  // (and then everything after shifts). Returns the number of such bars, or
+  // -1 when the page's staves can't tell.
+  function externalShifted(local, ext) {
+    if (!local || !local.staves.length || !local.fromImage) return -1;
+    const handed = local.staves.filter(s => s.hand);
+    if (!handed.length) return -1;
+    const mid = (s, x) => { const t = (x - s.left) / Math.max(1, s.right - s.left); return s.lines[2][0] * (1 - t) + s.lines[2][1] * t; };
+    const sysOf = idx => local.systems.findIndex(sy => sy.staves.includes(idx));
+    const barsOf = idx => { const sy = local.systems[sysOf(idx)]; return (sy ? sy.staves : [idx]).map(i => local.staves[i].bars || []).reduce((a, b) => (b.length > a.length ? b : a), []); };
+    const at = new Map(); // measure -> hand -> list of page bar ids
+    for (const e of ext.events) {
+      if (e.x == null || e.y == null || !e.hand) continue;
+      const p = local.fromImage(e.x, e.y);
+      let best = -1, bestD = Infinity;
+      local.staves.forEach((s, i) => { if (s.hand !== e.hand) return; const d = Math.abs(mid(s, p.x) - p.y); if (d < bestD) { bestD = d; best = i; } });
+      if (best < 0 || bestD > 6 * (local.space || 20)) continue; // not on a staff found here
+      const id = sysOf(best) * 1000 + barsOf(best).filter(b => b < p.x).length;
+      if (!at.has(e.measure)) at.set(e.measure, {});
+      const h = at.get(e.measure);
+      (h[e.hand] = h[e.hand] || []).push(id);
+    }
+    const mode = l => { const c = new Map(); let best = l[0], n = 0; for (const v of l) { c.set(v, (c.get(v) || 0) + 1); if (c.get(v) > n) { n = c.get(v); best = v; } } return best; };
+    let shifted = 0;
+    for (const h of at.values()) if (h.right && h.left && mode(h.right) !== mode(h.left)) shifted++;
+    return shifted;
+  }
+
+  // The other reader's own bars, with a misread note value put right where
+  // one hand's bar does not add up: one note whose value, halved, doubled,
+  // dotted or undotted, makes the bar add up (preferring the value of the
+  // notes beside it). Its bars, repeats and endings are kept; the start
+  // times are worked out again. Returns a new result.
+  function repairExternal(ext) {
+    const res = Object.assign({}, ext, { events: ext.events.map(e => Object.assign({}, e)) });
+    const near = (a, b) => Math.abs(a - b) < 1e-6;
+    const byM = new Map();
+    for (const e of res.events) { if (!byM.has(e.measure)) byM.set(e.measure, []); byM.get(e.measure).push(e); }
+    const ids = [...byM.keys()].sort((a, b) => a - b);
+    // Where each event sits in its bar.
+    for (const m of ids) {
+      const list = byM.get(m);
+      const s0 = Math.min(...list.map(e => e.start));
+      for (const e of list) e.off = e.start - s0;
+    }
+    const sig = timeToBeats(((ext.staves || []).find(s => s.time) || {}).time);
+    let fixed = 0;
+    const lens = new Map();
+    for (const m of ids) {
+      const list = byM.get(m);
+      const hands = new Map();
+      for (const e of list) { const k = e.staff; if (!hands.has(k)) hands.set(k, []); hands.get(k).push(e); }
+      const end = l => Math.max(...l.map(e => e.off + e.beats));
+      const ends = [...hands.values()].map(end);
+      let len = Math.max(...ends);
+      if (sig && !ends.every(v => near(v, ends[0]))) {
+        const T = ends.some(v => near(v, sig)) ? sig : null;
+        if (T != null) for (const l of hands.values()) {
+          if (near(end(l), T)) continue;
+          l.sort((a, b) => a.off - b.off);
+          // Only a plain one-voice line: each event starts where the last ends.
+          let t = l[0].off, plain = true;
+          for (const e of l) { if (!near(e.off, t)) { plain = false; break; } t += e.beats; }
+          if (!plain) continue;
+          const sum = t - l[0].off;
+          let best = null;
+          l.forEach((e, i) => {
+            for (const f of [0.5, 2, 1.5, 2 / 3, 0.75, 4 / 3]) {
+              const nb = e.beats * f;
+              if (!near(l[0].off + sum - e.beats + nb, T)) continue;
+              const nbs = [l[i - 1], l[i + 1]].filter(Boolean).map(q => q.beats);
+              const score = (nbs.some(v => near(v, nb)) ? 0 : 2) + (e.type === 'rest' ? 1 : 0) + (f === 0.5 || f === 2 ? 0 : 0.5);
+              if (!best || score < best.score) best = { e, nb, score };
+            }
+          });
+          if (!best || best.score >= 2) continue;
+          best.e.beats = best.nb;
+          let u = l[0].off;
+          for (const e of l) { e.off = u; u += e.beats; }
+          fixed++;
+        }
+        len = Math.max(...[...hands.values()].map(end));
+      }
+      lens.set(m, len);
+    }
+    // Start times again, in the playing order.
+    const order = (ext.playOrder && ext.playOrder.length ? ext.playOrder.map(n => n - 1) : ids);
+    for (const e of res.events) e.starts = [];
+    let t = 0;
+    for (const m of order) {
+      for (const e of byM.get(m) || []) e.starts.push(t + e.off);
+      t += lens.get(m) || 0;
+    }
+    for (const e of res.events) { e.start = e.starts.length ? e.starts[0] : 0; delete e.off; }
+    res.totalBeats = t;
+    res.barLength = sig || typicalBarLength(res.events);
+    res.pickup = ids.length > 1 && lens.get(ids[0]) < res.barLength - 1e-6;
+    res.fixedValues = fixed;
+    return res;
+  }
+
+  const api = { recognize, rgbaToGray, noteName, mergeExternal, repairExternal, externalShifted, timeToBeats };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.OMR = api;
 })(typeof window !== 'undefined' ? window : this);
