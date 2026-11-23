@@ -2199,6 +2199,87 @@
       a.role = b.role = 'repeat';
       out.push({ x: a.cx, type: left ? 'start' : 'end' });
     }
+    // In a blurred photo the dots run into the thick barline beside them
+    // and are no shapes of their own: look at the ink itself. Beside a
+    // stroke through the whole staff, a small blob in each of the two
+    // middle spaces and nothing in the outer spaces.
+    const { bin, w, h } = ctx;
+    const ink = (x, y) => x >= 0 && x < w && y >= 0 && y < h && bin[y * w + x];
+    const band = (x, k) => {
+      const y = Math.round(posY(staff, x, k)), r = Math.max(1, Math.round(0.2 * D));
+      for (let yy = y - r; yy <= y + r; yy++) if (ink(x, yy)) return true;
+      return false;
+    };
+    const strokes = [];
+    for (let x = Math.max(0, Math.round(staff.left)); x <= Math.min(w - 1, staff.right + D); x++) {
+      const t = Math.round(posY(staff, x, 0)), b = Math.round(posY(staff, x, 8));
+      let n = 0;
+      for (let y = t; y <= b; y++) if (ink(x, y)) n++;
+      if (n >= 0.92 * (b - t + 1)) {
+        const last = strokes[strokes.length - 1];
+        if (last && x - last[1] <= 1) last[1] = x; else strokes.push([x, x]);
+      }
+    }
+    const blob = (from, to, side) => {
+      // The inked columns of the middle spaces between from and to; the
+      // blob ends clear of the far side (a notehead there runs on).
+      const runs = [];
+      for (const k of [3, 5]) {
+        let x0 = -1, x1 = -1;
+        for (let x = from; x <= to; x++) if (band(x, k)) { if (x0 < 0) x0 = x; x1 = x; }
+        if (x0 < 0) return null;
+        if (side > 0 ? band(to + 1, k) || x1 >= to - 1 : band(from - 1, k) || x0 <= from + 1) return null;
+        let full = true;
+        for (let x = x0; x <= x1; x++) if (!band(x, k)) full = false;
+        if (!full || x1 - x0 + 1 > 0.9 * D || x1 - x0 + 1 < 0.2 * D) return null;
+        // Round and filled, not a slanting stroke passing through.
+        const y = Math.round(posY(staff, (x0 + x1) / 2, k)), r = Math.max(1, Math.round(0.15 * D));
+        let n = 0, all = 0;
+        for (let yy = y - r; yy <= y + r; yy++) for (let x = x0; x <= x1; x++) { all++; if (ink(x, yy)) n++; }
+        if (n < 0.7 * all) return null;
+        // Nothing past the staff line on its outer side (a slanting
+        // stroke runs on there).
+        {
+          const yy = Math.round(y + (k === 3 ? -0.72 : 0.72) * D);
+          let m = 0;
+          for (let x = x0; x <= x1; x++) if (ink(x, yy)) m++;
+          if (m > 0.4 * (x1 - x0 + 1)) return null;
+        }
+        runs.push([x0, x1]);
+      }
+      if (Math.abs(runs[0][0] + runs[0][1] - runs[1][0] - runs[1][1]) / 2 > 0.2 * D) return null;
+      if (Math.abs((runs[0][1] - runs[0][0]) - (runs[1][1] - runs[1][0])) > 0.25 * D + 1) return null;
+      const x0 = Math.min(runs[0][0], runs[1][0]), x1 = Math.max(runs[0][1], runs[1][1]);
+      // Two dots, not one stroke through the middle line: somewhere
+      // between them the ink thins out.
+      {
+        const cx = (x0 + x1) / 2;
+        let gap = false;
+        for (let y = Math.round(posY(staff, cx, 3)); y <= posY(staff, cx, 5) && !gap; y++) {
+          let m = 0;
+          for (let x = x0; x <= x1; x++) if (ink(x, y)) m++;
+          if (m < 0.5 * (x1 - x0 + 1)) gap = true;
+        }
+        if (!gap) return null;
+      }
+      for (const k of [1, 7]) { let n = 0; for (let x = x0; x <= x1; x++) if (band(x, k)) n++; if (n > 0.3 * (x1 - x0 + 1)) return null; }
+      return (x0 + x1) / 2;
+    };
+    for (let i = 0; i < strokes.length; i++) {
+      // A thin and a thick line together are one barline.
+      let j = i;
+      while (j + 1 < strokes.length && strokes[j + 1][0] - strokes[j][1] <= 1.2 * D) j++;
+      const x0 = strokes[i][0], x1 = strokes[j][1];
+      i = j;
+      const gap = Math.max(1, Math.round(0.12 * D));
+      const after = blob(x1 + gap, Math.round(x1 + 1.3 * D), 1);
+      const before = blob(Math.round(x0 - 1.3 * D), x0 - gap, -1);
+      for (const [x, type] of [[after, 'start'], [before, 'end']]) {
+        if (x == null || out.some(r => Math.abs(r.x - x) < 1.5 * D)) continue;
+        out.push({ x, type });
+        dbg('pixrep', type, Math.round(x));
+      }
+    }
     out.sort((p, q) => p.x - q.x);
     dbg('repeats', staff.index, out.map(r => r.type + '@' + Math.round(r.x)).join(' '));
     return out;
@@ -2369,7 +2450,13 @@
         const sums = lists.map(l => (timed(l) ? Math.max(...l.map(e => e.at + e.beats)) : l.reduce((a, e) => a + e.beats, 0)));
         const filled = lists.map((l, i) => i).filter(i => lists[i].length);
         let len, refList = -1;
+        // A hand with only rests in this bar does not set its length when the
+        // hands disagree: rests are misread more easily than notes.
+        const withNotes = filled.filter(i => lists[i].some(e => e.type === 'note'));
+        const notesAgree = withNotes.length && withNotes.length < filled.length && withNotes.every(i => near(sums[i], sums[withNotes[0]]));
+        const first = !measures.length && !sysMeasures.length;
         if (filled.every(i => near(sums[i], sums[filled[0]]))) { len = sums[filled[0]] || 0; refList = filled[0]; }
+        else if (notesAgree && (near(sums[withNotes[0]], L) || (first && sums[withNotes[0]] < L))) { len = sums[withNotes[0]]; refList = withNotes[0]; }
         else {
           refList = filled.find(i => near(sums[i], L));
           if (refList === undefined) refList = -1;
@@ -2442,6 +2529,17 @@
       let j = i;
       while (j < measures.length && !measures[j].endRepeat && !measures[j].startRepeat && (!measures[j].ending || measures[j].ending === 1)) j++;
       if (j < measures.length && measures[j].endRepeat && (!measures[j].ending || measures[j].ending === 1)) for (let k = i; k <= j; k++) measures[k].ending = 1;
+    }
+    // A first ending with no end repeat found (its dots are small and fade
+    // in a photo) still ends with one: when it reads "1." or a second
+    // ending follows it.
+    if (!measures.some(g => g.endRepeat)) {
+      for (let i = 0; i < measures.length; i++) {
+        const g = measures[i];
+        if (g.ending !== 1 || (measures[i + 1] && measures[i + 1].ending === 1)) continue;
+        const next = measures[i + 1];
+        if (g.volta.number === 1 || (next && next.ending === 2)) g.endRepeat = true;
+      }
     }
     // Endings mean nothing without a repeat (and a misread one must not
     // skip bars).

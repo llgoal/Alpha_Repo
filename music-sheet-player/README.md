@@ -22,7 +22,7 @@ Then open <http://127.0.0.1:8787/> and press **Melody demo** or **Piano demo**, 
 - Whole/half/quarter/eighth/sixteenth rests, barlines, simple chords on one stem.
 - Ledger lines above and below the staff, slightly rotated photos, uneven lighting, and phone photos of a book page whose lines bend toward the spine or the edge.
 - Chords with heads stacked in thirds (e.g. G–B–D in the left hand).
-- Repeat signs and first/second endings: the music is played with its repeats (e.g. bars 1–12, then 5–10, then the second ending).
+- Repeat signs and first/second endings: the music is played with its repeats (e.g. bars 1–12, then 5–10, then the second ending). In a blurred photo, repeat dots that run into the thick barline are still found from the ink, and a first ending whose repeat sign can't be seen still sends playback back.
 - A metronome mark such as "♩ = 89" above the first staff sets the playback tempo (a dotted or half note is converted to quarter beats). Without one, playback starts at ♩ = 96; the slider changes it.
 - When one hand's notes in a bar do not add up (a missed note or a misread value), that hand is placed by where its notes stand on the page against the other hand, so the hands stay together.
 
