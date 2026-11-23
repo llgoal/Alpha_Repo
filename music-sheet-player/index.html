@@ -75,7 +75,19 @@
   }
   .drop.over { border-color: var(--accent); background: var(--accent-soft); }
   .drop strong { color: var(--ink); display: block; font-size: 17px; margin-bottom: 4px; }
-  .canvas-box { overflow: hidden; border-radius: 8px; background: #fff; }
+.canvas-box { position: relative; overflow: hidden; border-radius: 8px; background: #fff; min-height: 120px; }
+  /* Reading in progress: the whole score while the browser reads, then a
+     banner on top while the AI reader checks it. */
+  .busy { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--paper) 78%, transparent); }
+  .busy.banner { inset: 10px 10px auto 10px; display: block; background: none; }
+  .busy-card { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 12px; background: var(--paper); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: min(92%, 460px); }
+  .busy.banner .busy-card { margin: 0 auto; padding: 10px 14px; }
+  .busy-card strong { display: block; font-size: 16px; }
+  .busy-card small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .spinner { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--accent-soft); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+  .busy.banner .spinner { width: 20px; height: 20px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
   canvas { display: block; width: 100%; height: auto; }
   .status { margin-top: 10px; color: var(--muted); font-size: 14px; min-height: 1.5em; }
   .status.err { color: var(--accent); }
@@ -155,7 +167,9 @@
     <div class="drop" id="drop">
       <div><strong>Drop a picture of sheet music here, or paste a screenshot</strong>JPG, PNG or PDF (first page). Or try a demo: a melody, or a piano piece for both hands.</div>
     </div>
-    <div class="canvas-box" id="canvasBox" hidden><canvas id="canvas"></canvas></div>
+    <div class="canvas-box" id="canvasBox" hidden><canvas id="canvas"></canvas>
+      <div class="busy" id="busy" hidden><div class="busy-card"><span class="spinner" aria-hidden="true"></span><div><strong id="busyTitle">Reading the score…</strong><small id="busyNote"></small></div></div></div>
+    </div>
     <div class="status" id="status" role="status"></div>
     <div class="status" id="engineNote" hidden>AI reader on: each score is also read by homr on your own computer.</div>
   </div>
@@ -178,7 +192,7 @@
 </div>
 
 <script src="piano-samples.js"></script>
-<script src="player.js?v=ced1527d"></script>
+<script src="player.js?v=ad06d11c"></script>
 <script src="omr.js?v=216b9e0b"></script>
 <script>
 (function () {
@@ -201,6 +215,28 @@
     statusEl.textContent = text || '';
     statusEl.classList.toggle('err', !!isError);
   }
+
+  // The reading-in-progress sign over the score, with a running clock.
+  // mode: 'full' covers the score, 'banner' sits on top of it, null hides it.
+  const busy = { timer: 0, t0: 0 };
+  function setBusy(mode, title, note) {
+    clearInterval(busy.timer);
+    const el = $('busy');
+    if (!mode) { el.hidden = true; return; }
+    el.hidden = false;
+    el.classList.toggle('banner', mode === 'banner');
+    $('busyTitle').textContent = title;
+    busy.t0 = performance.now();
+    const tickNote = () => {
+      const s = Math.round((performance.now() - busy.t0) / 1000);
+      $('busyNote').textContent = note + (s >= 2 ? ` (${s} s)` : '');
+    };
+    tickNote();
+    busy.timer = setInterval(tickNote, 1000);
+  }
+
+  // Each new score gets a number; work for an older one is dropped.
+  let runId = 0;
 
   // ---------- loading ----------
 
@@ -253,7 +289,9 @@
   async function openFile(file) {
     if (!file) return;
     stop();
-    setStatus('Reading image…');
+    const run = ++runId;
+    server.req = null; // an AI reading still on its way is for the old score
+    setStatus('Opening the picture…');
     try {
       const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
       let c;
@@ -262,6 +300,7 @@
         const url = URL.createObjectURL(file);
         try { c = await imageToCanvas(url); } finally { URL.revokeObjectURL(url); }
       }
+      if (run !== runId) return; // another score was chosen meanwhile
       showImage(c);
     } catch (e) {
       setStatus(e.message || 'Could not read the file.', true);
@@ -282,15 +321,21 @@
   async function runRecognition() {
     if (!image) return;
     stop();
+    const run = ++runId;
+    server.req = null;
     result = null;
     $('playBtn').disabled = true;
     $('resultArea').hidden = true;
     setStatus('Recognizing…');
+    setBusy('full', 'Reading the score…', server.ok ? 'In this browser, and by the AI reader on your computer' : 'This takes a few seconds');
     // Send the page to the AI reader first, so it works while the browser
     // reads (on a phone the in-browser reading can take several seconds).
-    const pending = server.ok ? await sendToServer(image) : null;
-    // Let the status paint before the (synchronous) recognizer runs.
+    const img = image;
+    const pending = server.ok ? await sendToServer(img) : null;
+    if (run !== runId) return;
+    // Let the sign paint before the (synchronous) recognizer runs.
     setTimeout(() => {
+      if (run !== runId || image !== img) return;
       const t0 = performance.now();
       let res;
       try {
@@ -301,6 +346,7 @@
         if ($('clefSel').value) forceClef(res, $('clefSel').value);
       } catch (e) {
         console.error(e);
+        setBusy(null);
         setStatus('Recognition failed: ' + e.message, true);
         return;
       }
@@ -323,8 +369,11 @@
       $('handSel').hidden = !hasHands();
       renderResult();
       draw();
-      if (pending) applyServer(pending, res);
-    }, 30);
+      if (pending) {
+        setBusy('banner', 'The AI reader is checking the notes…', notes ? 'You can already play this first reading' : 'Please wait');
+        applyServer(pending, res);
+      } else setBusy(null);
+    }, 60);
   }
 
   // ---------- recognition server (homr on your own computer) ----------
@@ -379,6 +428,10 @@
     try {
       const srv = await p.answer;
       if (server.req !== p.req || image !== p.img) return; // a newer image came in
+      // Playing the first reading: carry on from the same beat with the new notes.
+      let resumeAt = null;
+      if (playing && playing.startAt != null && PianoPlayer.context) resumeAt = Math.max(0, (PianoPlayer.context.currentTime - playing.startAt) / secondsPerBeat());
+      setBusy(null);
       if (!srv.events.some(e => e.type === 'note')) throw new Error('no notes');
       // Positions back to this image's scale.
       if (p.f < 1) for (const ev of srv.events) {
@@ -397,8 +450,10 @@
       renderResult();
       draw();
       setStatus(`Done with the AI reader (homr): ${notes} notes, in ${((performance.now() - p.t0) / 1000).toFixed(1)} s (reading on the computer: ${srv.seconds} s).${fixed}`);
+      if (resumeAt != null && resumeAt < result.totalBeats) play(resumeAt);
     } catch (e) {
       if (server.req !== p.req) return;
+      setBusy(null);
       setStatus(base + ' (The AI reader could not read it: ' + (e.message || e) + ')');
     }
   }
@@ -658,7 +713,8 @@
 
   function secondsPerBeat() { return 60 / Number($('tempo').value); }
 
-  async function play() {
+  // fromBeat: carry on from there (used when a better reading comes in).
+  async function play(fromBeat = 0) {
     if (!result) return;
     const events = result.events;
     const midis = events.filter(e => e.type === 'note' && wanted(e)).flatMap(e => e.pitches.map(p => p.midi));
@@ -680,7 +736,7 @@
     if (playing !== request) return; // stopped or restarted while loading
     const ctx = PianoPlayer.context;
     const spb = secondsPerBeat();
-    const startAt = ctx.currentTime + 0.15;
+    const startAt = ctx.currentTime + 0.15 - fromBeat * spb;
     const schedule = [];
     // Each event carries its start in beats; both hands of a piano system
     // start together, so they are simply scheduled at their own times.
@@ -691,6 +747,7 @@
       seq = beats[0] + ev.beats;
       if (!wanted(ev)) return;
       for (const beat of beats) {
+        if (beat < fromBeat - 1e-6) continue;
         const t = beat * spb, dur = ev.beats * spb;
         if (ev.type === 'note') {
           const vel = (ev.hand === 'left' ? 0.75 : 0.9) / Math.sqrt(ev.pitches.length);
@@ -704,7 +761,7 @@
     playing.startAt = startAt;
     playing.end = startAt + t;
     playing.schedule = schedule;
-    setStatus(`Playing (♩ = ${$('tempo').value})`);
+    setStatus(fromBeat ? `Playing on with the AI reader's notes (♩ = ${$('tempo').value})` : `Playing (♩ = ${$('tempo').value})`);
     const tick = () => {
       if (playing !== request) return;
       const now = ctx.currentTime;
@@ -756,8 +813,10 @@
   $('cameraInput').addEventListener('change', e => { openFile(e.target.files[0]); e.target.value = ''; });
   async function openDemo(file) {
     stop();
+    const run = ++runId;
+    server.req = null;
     setStatus('Opening demo score…');
-    try { showImage(await imageToCanvas(file)); }
+    try { const c = await imageToCanvas(file); if (run === runId) showImage(c); }
     catch (e) { setStatus('Could not load the demo score.', true); }
   }
   detectServer();

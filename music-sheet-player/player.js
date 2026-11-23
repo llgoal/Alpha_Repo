@@ -37,13 +37,24 @@
   function unlock() {
     const Ctor = global.AudioContext || global.webkitAudioContext;
     if (!Ctor) throw new Error('This browser cannot play Web Audio.');
-    if (!ctx || ctx.state === 'closed') {
+    // A context that is not running by now was paused by the system (on
+    // iPhone: after the photo picker or camera, a call, another app's
+    // sound). Its resume() can then wait forever, so start a fresh one,
+    // inside this tap. Decoded samples are kept: they work in any context.
+    if (ctx && ctx.state !== 'running') {
+      try { ctx.close(); } catch (e) { /* already closed */ }
+      ctx = null;
+    }
+    if (!ctx) {
       ctx = new Ctor();
       output = null;
-      buffers.clear();
+      active = [];
     }
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* optional API */ }
-    const resumed = ctx.state !== 'running' ? ctx.resume() : Promise.resolve();
+    // Never wait more than 3 s for the sound to start.
+    const resumed = ctx.state !== 'running'
+      ? Promise.race([ctx.resume(), new Promise((_, no) => setTimeout(() => no(new Error('the sound did not start. Tap Play again.')), 3000))])
+      : Promise.resolve();
     // A one-sample buffer started inside the gesture unlocks iOS Safari.
     try {
       const src = ctx.createBufferSource();
@@ -89,7 +100,8 @@
     const wanted = [...new Set(midis.map(nearestSample))];
     await Promise.all(wanted.map(m => {
       if (buffers.has(m)) return buffers.get(m);
-      const p = decode(base64ToArrayBuffer(SAMPLES[m])).then(buf => { buffers.set(m, buf); return buf; });
+      const p = decode(base64ToArrayBuffer(SAMPLES[m])).then(buf => { buffers.set(m, buf); return buf; },
+        err => { buffers.delete(m); throw err; }); // try again next time
       buffers.set(m, p);
       return p;
     }));
