@@ -59,16 +59,29 @@
   function showKeyCard() {
     $('keyCard').hidden = false;
     setServer('bad', keyTried ? '密钥不对' : '需要密钥');
-    if (keyTried) $('keyHint').hidden = false;
+    if (keyTried) keyHint('密钥不对，请用 8 位数字密码再试一次。');
   }
-  $('keyForm').addEventListener('submit', e => {
+  $('keyForm').addEventListener('submit', async e => {
     e.preventDefault();
-    key = cleanKey($('keyInput').value);
+    const raw = $('keyInput').value.trim();
+    const digits = raw.replace(/[\s-]/g, '');
+    $('keyHint').hidden = true;
+    if (/^\d{4,12}$/.test(digits)) {
+      // The short PIN: the Mac mini trades it for the real key.
+      try {
+        const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: digits }) });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { keyHint(res.status === 429 ? body.error : '密码不对，请再看一下 Mac mini 上的 8 位数字。'); return; }
+        key = body.key;
+      } catch { keyHint('连不上 Mac mini。'); return; }
+    } else key = cleanKey(raw);
     if (!saveKey(key)) history.replaceState(null, '', location.pathname + location.search + '#key=' + encodeURIComponent(key));
     keyTried = true;
+    $('keyInput').value = '';
     $('keyCard').hidden = true;
     refresh();
   });
+  function keyHint(text) { $('keyHint').textContent = text; $('keyHint').hidden = false; }
 
   function setServer(kind, text) {
     $('serverStatus').className = 'server ' + kind;

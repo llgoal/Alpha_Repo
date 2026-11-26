@@ -117,6 +117,13 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(m['status'], 'error')
         self.assertIn('Video unavailable', m['error'])
 
+    def test_pin_gives_key(self):
+        pin = (self.tmp / 'home' / 'pin').read_text().strip()
+        self.assertRegex(pin, r'^\d{8}$')
+        code, body = self.req('/api/login', {'pin': pin}, key=False)
+        self.assertEqual((code, body.get('key')), (200, self.key))
+        self.assertEqual(self.req('/api/login', {'pin': '00000000' if pin != '00000000' else '1'}, key=False)[0], 403)
+
     def test_bad_link_rejected(self):
         self.assertEqual(self.req('/api/videos', {'url': 'notaurl'})[0], 400)
 

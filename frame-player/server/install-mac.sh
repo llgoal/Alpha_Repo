@@ -84,7 +84,9 @@ echo
 echo "Frame Studio is running. Videos are kept in $STATE/videos"
 echo "  On this Mac:            http://localhost:$PORT/#key=$KEY"
 echo "  On your home Wi-Fi:     http://$HOST:$PORT/#key=$KEY"
+PIN="$(cat "$STATE/pin" 2>/dev/null || true)"
 echo "Open one of these once on each phone or computer; it remembers the key."
+echo "Or open the page without the key and type this 8-digit PIN (handy in the car):  $PIN"
 TS=""
 command -v tailscale >/dev/null 2>&1 && TS=tailscale
 [ -z "$TS" ] && [ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ] && TS=/Applications/Tailscale.app/Contents/MacOS/Tailscale

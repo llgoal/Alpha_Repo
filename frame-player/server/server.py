@@ -16,7 +16,8 @@ GET    /api/videos/<id>/zip       all frames + audio as a ZIP download
 
 Every /api and /media request needs the key, in the X-Frame-Key header or as
 ?k=<key>. The key is made on first start and kept in ~/.framestudio/key; open
-the player once as <url>/#key=<key> and it remembers it.
+the player once as <url>/#key=<key> and it remembers it, or type the 8-digit
+PIN from ~/.framestudio/pin on the page (POST /api/login trades it for the key).
 """
 import argparse
 import json
@@ -67,6 +68,16 @@ def load_key():
     f = STATE_DIR / 'key'
     if not f.exists():
         f.write_text(secrets.token_urlsafe(18))
+        os.chmod(f, 0o600)
+    return f.read_text().strip()
+
+
+def load_pin():
+    """A short number for typing on a car screen; trading it for the key is
+    rate-limited (see Handler.login)."""
+    f = STATE_DIR / 'pin'
+    if not f.exists():
+        f.write_text('%08d' % secrets.randbelow(10 ** 8))
         os.chmod(f, 0o600)
     return f.read_text().strip()
 
@@ -537,10 +548,32 @@ class Handler(SimpleHTTPRequestHandler):
         except ValueError:
             return {}
 
+    pin = ''
+    fails = []            # times of wrong PINs, for the lockout
+    fail_lock = threading.Lock()
+
+    def login(self):
+        """POST /api/login {"pin"} -> {"key"}. After 10 wrong PINs within
+        15 minutes every attempt is refused until the window passes."""
+        body = self.read_json()
+        now = time.time()
+        with Handler.fail_lock:
+            Handler.fails[:] = [t for t in Handler.fails if now - t < 900]
+            if len(Handler.fails) >= 10:
+                return self.send_json(429, {'ok': False, 'error': '错误次数太多，请 15 分钟后再试'})
+            pin = re.sub(r'\D', '', str(body.get('pin') or ''))
+            if self.pin and secrets.compare_digest(pin, self.pin):
+                return self.send_json(200, {'ok': True, 'key': self.key})
+            Handler.fails.append(now)
+        time.sleep(1)
+        return self.send_json(403, {'ok': False, 'error': 'pin'})
+
     def do_POST(self):
         path, q = self.parts()
         if not path.startswith('/api/'):
             return self.send_json(404, {'ok': False, 'error': 'not found'})
+        if path == '/api/login':
+            return self.login()
         if not self.authorized():
             return self.send_json(401, {'ok': False, 'error': 'key'})
         if path == '/api/videos':
@@ -618,6 +651,7 @@ def main():
     ap.add_argument('--host', default='0.0.0.0')
     args = ap.parse_args()
     Handler.key = load_key()
+    Handler.pin = load_pin()
     VIDEOS.mkdir(parents=True, exist_ok=True)
     JOBS.start()
     recover()
@@ -625,6 +659,7 @@ def main():
     print('Frame Studio server on port %d (ffmpeg: %s, yt-dlp: %s)' % (args.port, FFMPEG, YTDLP), flush=True)
     print('Videos in %s' % VIDEOS, flush=True)
     print('Open once with:  http://localhost:%d/#key=%s' % (args.port, Handler.key), flush=True)
+    print('Or type this PIN on the page:  %s' % Handler.pin, flush=True)
     ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
 
 
