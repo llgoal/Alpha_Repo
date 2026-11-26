@@ -2,374 +2,482 @@
   'use strict';
 
   const $ = id => document.getElementById(id);
-  const els = {
-    form: $('urlForm'), url: $('videoUrl'), clearUrl: $('clearUrl'), file: $('fileInput'),
-    canvas: $('frameCanvas'), youtubeLayer: $('youtubeLayer'), stage: $('stage'),
-    empty: $('emptyState'), loading: $('loading'), status: $('stageStatus'), frameReadout: $('frameReadout'),
-    currentFrame: $('currentFrame'), timeline: $('timeline'), currentTime: $('currentTime'), duration: $('duration'),
-    sourceName: $('sourceName'), prev: $('prevFrame'), play: $('playPause'), next: $('nextFrame'),
-    rate: $('playbackRate'), fps: $('fps'), mute: $('mute'), fullscreen: $('fullscreen'), message: $('message')
-  };
-  const ctx = els.canvas.getContext('2d', { alpha: false });
-  const state = {
-    ready: false, mode: null, loadId: 0, playing: false, playbackToken: 0,
-    decoder: null, frameQueue: [], samples: [], presentation: [], timestampIndex: new Map(), decoderConfig: null,
-    currentIndex: 0, duration: 0, youtubePlayer: null, youtubeTimer: 0
-  };
-  let mp4boxPromise = null;
-  let youtubeApiPromise = null;
-  const controls = [els.prev, els.play, els.next, els.rate, els.mute, els.fullscreen, els.timeline];
+  const KEY_STORE = 'framestudio.key';
 
-  function setControls(enabled) {
-    controls.forEach(control => { control.disabled = !enabled; });
-    els.mute.disabled = !enabled || state.mode === 'canvas';
-    els.fps.disabled = enabled && state.mode === 'canvas';
-  }
-  function setStatus(label, isError = false) { els.status.textContent = label; els.status.classList.toggle('error', isError); }
-  function showMessage(text, kind = 'error') { els.message.textContent = text; els.message.className = `message${kind === 'info' ? ' info' : ''}`; els.message.hidden = false; }
-  function hideMessage() { els.message.hidden = true; els.message.textContent = ''; }
-  function formatTime(seconds) {
-    if (!Number.isFinite(seconds) || seconds < 0) return '00:00.000';
-    const hours = Math.floor(seconds / 3600), minutes = Math.floor((seconds % 3600) / 60), secs = Math.floor(seconds % 60), millis = Math.floor((seconds % 1) * 1000);
-    const base = `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
-    return hours ? `${String(hours).padStart(2, '0')}:${base}` : base;
-  }
-  function selectedFps() { return Math.max(1, Number(els.fps.value) || 30); }
-  function youtubeState() { try { return state.youtubePlayer ? state.youtubePlayer.getPlayerState() : -1; } catch { return -1; } }
-  function isPlaying() { return state.ready && (state.mode === 'youtube' ? youtubeState() === 1 : state.playing); }
-  function currentCanvasTime() {
-    const sample = state.presentation[state.currentIndex];
-    return sample ? sample.cts / sample.timescale : 0;
-  }
-  function currentTimeValue() {
-    if (state.mode === 'youtube') { try { return Number(state.youtubePlayer.getCurrentTime()) || 0; } catch { return 0; } }
-    return currentCanvasTime();
-  }
-  function durationValue() {
-    if (state.mode === 'youtube') { try { return Number(state.youtubePlayer.getDuration()) || 0; } catch { return 0; } }
-    return state.duration;
-  }
-  function updateReadout(mediaTime = currentTimeValue()) {
-    if (!state.ready) return;
-    const duration = durationValue();
-    const progress = duration > 0 ? Math.min(1000, Math.max(0, mediaTime / duration * 1000)) : 0;
-    els.timeline.value = String(progress); els.timeline.style.setProperty('--progress', `${progress / 10}%`);
-    els.currentTime.textContent = formatTime(mediaTime); els.duration.textContent = formatTime(duration);
-    const frame = state.mode === 'canvas' ? state.currentIndex + 1 : Math.max(0, Math.round(mediaTime * selectedFps()));
-    els.currentFrame.textContent = String(frame).padStart(6, '0');
-  }
-  function updatePlayButton() {
-    const playing = isPlaying(); els.play.classList.toggle('playing', playing);
-    els.play.setAttribute('aria-label', playing ? '暂停' : '播放');
-    setStatus(playing ? 'PLAYING' : state.ready ? (state.mode === 'canvas' ? 'WEBCODECS READY' : 'PAUSED') : 'READY');
-  }
-  function sourceName(url) {
-    try { const parsed = new URL(url); const name = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || parsed.hostname); return name.length > 50 ? `${name.slice(0, 47)}…` : name; }
-    catch { return 'REMOTE MP4'; }
-  }
-  function closeFrameQueue() { for (const item of state.frameQueue) item.frame.close(); state.frameQueue = []; }
-  function stopCanvasPlayback(update = true) {
-    state.playing = false; state.playbackToken++; closeFrameQueue();
-    if (state.decoder) { try { state.decoder.close(); } catch {} state.decoder = null; }
-    if (update) updatePlayButton();
-  }
-  function stopYoutubeTimer() { if (state.youtubeTimer) clearInterval(state.youtubeTimer); state.youtubeTimer = 0; }
-  function startYoutubeTimer() { stopYoutubeTimer(); state.youtubeTimer = window.setInterval(() => { if (state.mode === 'youtube' && state.ready) updateReadout(); }, 150); }
-
-  function resetSource() {
-    state.loadId++; state.ready = false; stopCanvasPlayback(false); stopYoutubeTimer(); state.mode = null;
-    state.samples = []; state.presentation = []; state.timestampIndex = new Map(); state.decoderConfig = null; state.currentIndex = 0; state.duration = 0;
-    if (state.youtubePlayer) { try { state.youtubePlayer.destroy(); } catch {} state.youtubePlayer = null; }
-    els.youtubeLayer.hidden = true; els.youtubeLayer.innerHTML = '<div id="youtubePlayer"></div>'; els.canvas.hidden = false;
-    setControls(false); els.fps.disabled = false; els.frameReadout.hidden = true; els.empty.hidden = false; els.loading.hidden = true;
-    els.canvas.width = 300; els.canvas.height = 150; ctx.fillStyle = '#060608'; ctx.fillRect(0, 0, 300, 150);
-    els.currentTime.textContent = '00:00.000'; els.duration.textContent = '00:00.000'; els.sourceName.textContent = 'NO SOURCE';
-    els.timeline.value = '0'; els.timeline.style.setProperty('--progress', '0%'); els.rate.value = '1'; els.mute.classList.remove('muted'); updatePlayButton();
-  }
-
-  function getMP4Box() {
-    if (!mp4boxPromise) mp4boxPromise = import('https://cdn.jsdelivr.net/npm/mp4box@2.4.1/+esm');
-    return mp4boxPromise;
-  }
-  function decoderDescription(MP4Box, file, track) {
-    const trak = file.getTrackById(track.id);
-    for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-      const box = entry.avcC || entry.hvcC || entry.vpcC || entry.av1C;
-      if (!box) continue;
-      const stream = new MP4Box.DataStream(undefined, 0, MP4Box.DataStream.BIG_ENDIAN);
-      box.write(stream); return new Uint8Array(stream.buffer, 8);
+  // ------------------------------------------------------------ key + API
+  function readKey() {
+    const m = location.hash.match(/key=([^&]+)/);
+    if (m) {
+      const k = decodeURIComponent(m[1]);
+      try { localStorage.setItem(KEY_STORE, k); } catch {}
+      history.replaceState(null, '', location.pathname + location.search);
+      return k;
     }
-    throw new Error('unsupported-codec');
+    try { return localStorage.getItem(KEY_STORE) || ''; } catch { return ''; }
   }
-  async function feedLocalFile(file, mp4, loadId) {
-    const chunkSize = 2 * 1024 * 1024;
-    for (let offset = 0; offset < file.size; offset += chunkSize) {
-      if (loadId !== state.loadId) throw new Error('cancelled');
-      const buffer = await file.slice(offset, Math.min(file.size, offset + chunkSize)).arrayBuffer();
-      buffer.fileStart = offset; mp4.appendBuffer(buffer);
-      setStatus(`READING ${Math.round(Math.min(file.size, offset + buffer.byteLength) / file.size * 100)}%`);
+  let key = readKey();
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: { 'X-Frame-Key': key, ...(opts.headers || {}) } });
+    let body = {};
+    try { body = await res.json(); } catch {}
+    if (res.status === 401) { showKeyCard(); throw new Error('key'); }
+    if (!res.ok || body.ok === false) throw new Error(body.error || `HTTP ${res.status}`);
+    return body;
+  }
+  const media = (id, file) => `/media/${id}/${file}?k=${encodeURIComponent(key)}`;
+  const frameName = i => String(i + 1).padStart(6, '0') + '.jpg';
+
+  function showKeyCard() { $('keyCard').hidden = false; setServer('bad', '需要密钥'); }
+  $('keyForm').addEventListener('submit', e => {
+    e.preventDefault();
+    key = $('keyInput').value.trim();
+    try { localStorage.setItem(KEY_STORE, key); } catch {}
+    $('keyCard').hidden = true;
+    refresh();
+  });
+
+  function setServer(kind, text) {
+    $('serverStatus').className = 'server ' + kind;
+    $('serverText').textContent = text;
+  }
+
+  // ------------------------------------------------------------ helpers
+  function fmtTime(s, precise = true) {
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60), sec = s - m * 60;
+    const h = Math.floor(m / 60);
+    const ss = precise ? sec.toFixed(2).padStart(5, '0') : String(Math.floor(sec)).padStart(2, '0');
+    return h ? `${h}:${String(m % 60).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+  }
+  function fmtBytes(n) {
+    if (!n) return '';
+    const u = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(n >= 100 || i === 0 ? 0 : 1)} ${u[i]}`;
+  }
+  const fmtFps = f => (Math.round(f * 100) / 100) + ' fps';
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function note(text, isError = false) {
+    const el = $('newNote');
+    el.hidden = !text;
+    el.textContent = text || '';
+    el.classList.toggle('error', isError);
+  }
+
+  // ------------------------------------------------------------ frame player
+  // Frames are JPEGs on the server. The audio element is the clock: at audio
+  // time t the stage shows frame floor((t - audioOffset) * fps). Without
+  // audio a wall clock stands in. Frames ahead of the playhead are fetched
+  // as compressed blobs (cheap) and the nearest ones decoded to bitmaps.
+  class Player {
+    constructor() {
+      this.canvas = $('canvas');
+      this.ctx = this.canvas.getContext('2d', { alpha: false });
+      this.audio = new Audio();
+      this.audio.preload = 'auto';
+      this.audio.preservesPitch = true;
+      this.meta = null;
+      this.cache = new Map();         // index -> {blob, bitmap, loading, decoding}
+      this.inflight = 0;
+      this.playing = false;
+      this.stalled = false;
+      this.drawn = -1;
+      this.wall = { base: 0, at: 0 }; // clock when there is no audio
+      this.smooth = { t: 0, at: 0 };  // smooths coarse audio.currentTime
+      this.gen = 0;
+      this.dropped = 0;
+      this.audio.addEventListener('ended', () => this.finish());
+      this.loop = this.loop.bind(this);
+      requestAnimationFrame(this.loop);
     }
-  }
-  async function feedRemoteFile(url, mp4, loadId) {
-    const chunkSize = 2 * 1024 * 1024; let offset = 0, total = null;
-    while (total === null || offset < total) {
-      if (loadId !== state.loadId) throw new Error('cancelled');
-      const response = await fetch(url, { headers: { Range: `bytes=${offset}-${offset + chunkSize - 1}` } });
-      if (!response.ok) throw new Error('fetch');
-      const buffer = await response.arrayBuffer();
-      if (response.status !== 206) {
-        if (offset !== 0) throw new Error('range');
-        buffer.fileStart = 0; mp4.appendBuffer(buffer); setStatus('READING 100%'); return;
+
+    get fps() { return this.meta ? this.meta.fps : 30; }
+    get count() { return this.meta ? this.meta.frames : 0; }
+    get duration() { return this.count / this.fps; }
+    get rate() { return Number($('rateSelect').value) || 1; }
+    get hasAudio() { return !!(this.meta && this.meta.hasAudio); }
+
+    open(meta) {
+      this.close();
+      this.meta = meta;
+      this.gen++;
+      this.canvas.width = meta.width || 1280;
+      this.canvas.height = meta.height || 720;
+      $('stage').style.aspectRatio = `${this.canvas.width} / ${this.canvas.height}`;
+      if (this.hasAudio) {
+        this.audio.src = media(meta.id, 'audio.m4a');
+        this.audio.playbackRate = this.rate;
+        this.audio.load();
       }
-      const match = (response.headers.get('content-range') || '').match(/\/(\d+)$/);
-      if (!match || buffer.byteLength === 0) throw new Error('range');
-      total = Number(match[1]); buffer.fileStart = offset; mp4.appendBuffer(buffer); offset += buffer.byteLength;
-      setStatus(`READING ${Math.round(offset / total * 100)}%`);
+      const px = this.canvas.width * this.canvas.height * 4;
+      // Decoded bitmaps are big: about 120 MB of them, between 6 and 1.5 s worth.
+      this.bmpAhead = Math.max(6, Math.min(Math.ceil(this.fps * 1.5), Math.floor(120e6 / px)));
+      this.blobAhead = Math.max(this.bmpAhead, Math.ceil(this.fps * 6));
+      this.wall = { base: 0, at: performance.now() };
+      this.drawn = -1;
+      this.dropped = 0;
+      $('timeline').max = String(Math.max(0, this.count - 1));
+      $('durTime').textContent = fmtTime(this.duration);
+      $('nowTitle').textContent = meta.title || '';
+      $('nowInfo').textContent = `${fmtFps(meta.fps)} · ${meta.frames} 帧 · ${meta.width}×${meta.height}` + (meta.hasAudio ? ' · 有声音' : ' · 无声音');
+      $('playerCard').hidden = false;
+      this.seekFrame(0);
+    }
+
+    close() {
+      this.pause();
+      this.gen++;
+      for (const e of this.cache.values()) if (e.bitmap) e.bitmap.close();
+      this.cache.clear();
+      this.inflight = 0;
+      this.audio.removeAttribute('src');
+      this.audio.load();
+      this.meta = null;
+    }
+
+    // --- clock
+    now() {
+      if (!this.meta) return 0;
+      if (this.hasAudio) {
+        const t = this.audio.currentTime, p = performance.now();
+        if (!this.playing || this.stalled) { this.smooth = { t, at: p }; return t; }
+        // currentTime updates in coarse steps in some browsers: run forward
+        // from the last value and resync whenever it drifts.
+        const est = this.smooth.t + (p - this.smooth.at) / 1000 * this.rate;
+        if (Math.abs(est - t) > 0.08) { this.smooth = { t, at: p }; return t; }
+        return Math.max(est, t - 0.04);
+      }
+      if (!this.playing || this.stalled) return this.wall.base;
+      return this.wall.base + (performance.now() - this.wall.at) / 1000 * this.rate;
+    }
+    setTime(t) {
+      t = Math.max(0, Math.min(this.duration, t));
+      if (this.hasAudio) { try { this.audio.currentTime = t; } catch {} this.smooth = { t, at: performance.now() }; }
+      this.wall = { base: t, at: performance.now() };
+    }
+    frameAt(t) {
+      const off = this.hasAudio ? (this.meta.audioOffset || 0) : 0;
+      return Math.max(0, Math.min(this.count - 1, Math.floor((t - off) * this.fps + 1e-6)));
+    }
+    timeOf(i) { return (i + 0.5) / this.fps + (this.hasAudio ? (this.meta.audioOffset || 0) : 0); }
+
+    // --- loading
+    entry(i) {
+      let e = this.cache.get(i);
+      if (!e) { e = {}; this.cache.set(i, e); }
+      return e;
+    }
+    fetchBlob(i) {
+      const e = this.entry(i), gen = this.gen;
+      if (e.blob || e.loading) return;
+      e.loading = true;
+      this.inflight++;
+      fetch(media(this.meta.id, 'frames/' + frameName(i)))
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+        .then(b => { if (gen === this.gen) e.blob = b; })
+        .catch(() => {})
+        .finally(() => { if (gen === this.gen) { e.loading = false; this.inflight--; } });
+    }
+    decode(i) {
+      const e = this.entry(i), gen = this.gen;
+      if (!e.blob || e.bitmap || e.decoding) return;
+      e.decoding = true;
+      createImageBitmap(e.blob)
+        .then(bm => { if (gen === this.gen && this.cache.get(i) === e) e.bitmap = bm; else bm.close(); })
+        .catch(() => {})
+        .finally(() => { e.decoding = false; });
+    }
+    schedule(cur) {
+      const last = Math.min(this.count - 1, cur + this.blobAhead);
+      for (let i = cur; i <= last && this.inflight < 8; i++) {
+        const e = this.cache.get(i);
+        if (!e || (!e.blob && !e.loading)) this.fetchBlob(i);
+      }
+      const lastBmp = Math.min(this.count - 1, cur + this.bmpAhead);
+      for (let i = cur; i <= lastBmp; i++) this.decode(i);
+      // Let go of what is far behind or far ahead (after a seek).
+      for (const [i, e] of this.cache) {
+        if (i < cur - 3 || i > last + 2) {
+          if (e.loading) continue;
+          if (e.bitmap) e.bitmap.close();
+          this.cache.delete(i);
+        } else if (e.bitmap && i > lastBmp + 2) {
+          e.bitmap.close(); e.bitmap = null;
+        }
+      }
+    }
+    readyFrom(i, n) {
+      for (let k = i; k < Math.min(this.count, i + n); k++) {
+        const e = this.cache.get(k);
+        if (!e || !e.bitmap) return false;
+      }
+      return true;
+    }
+
+    // --- playback
+    play() {
+      if (!this.meta || this.playing) return;
+      if (this.frameAt(this.now()) >= this.count - 1) this.setTime(0);
+      this.playing = true;
+      this.updateButton();
+      const i = this.frameAt(this.now());
+      if (this.readyFrom(i, Math.min(this.bmpAhead, Math.max(2, Math.ceil(this.fps / 3))))) { this.stalled = true; this.resume(); return; }
+      this.stalled = true;   // start once a little is buffered
+      $('bufferBadge').hidden = false;
+      if (this.hasAudio) {
+        // Phones only let audio start from a tap: start it now, hold it
+        // until the frames are ready, then the loop lets it run.
+        const t = this.now();
+        this.audio.muted = true;
+        this.audio.play().then(() => {
+          if (this.stalled || !this.playing) { this.audio.pause(); this.setTime(t); }
+        }).catch(() => {}).finally(() => { this.audio.muted = userMuted; });
+      }
+    }
+    pause() {
+      if (!this.playing) return;
+      const t = this.now();
+      this.playing = false;
+      this.stalled = false;
+      if (this.hasAudio) this.audio.pause();
+      this.setTime(t);
+      $('bufferBadge').hidden = true;
+      this.updateButton();
+    }
+    toggle() { this.playing ? this.pause() : this.play(); }
+    finish() {
+      this.playing = false; this.stalled = false;
+      if (this.hasAudio) this.audio.pause();
+      this.wall = { base: this.duration, at: performance.now() };
+      $('bufferBadge').hidden = true;
+      this.updateButton();
+      this.updateReadout(this.frameAt(this.now()));
+    }
+    resume() {
+      this.stalled = false;
+      $('bufferBadge').hidden = true;
+      const t = this.now();
+      this.wall = { base: t, at: performance.now() };
+      if (this.hasAudio) {
+        this.audio.playbackRate = this.rate;
+        this.audio.play().catch(() => { this.playing = false; this.updateButton(); note('浏览器阻止了自动播放，请再点一次播放。', true); });
+        this.smooth = { t: this.audio.currentTime, at: performance.now() };
+      }
+    }
+    stall() {
+      this.stalled = true;
+      const t = this.now();
+      if (this.hasAudio) this.audio.pause();
+      this.setTime(t);
+      $('bufferBadge').hidden = false;
+    }
+    seekFrame(i) {
+      if (!this.meta) return;
+      i = Math.max(0, Math.min(this.count - 1, i));
+      this.setTime(this.timeOf(i));
+      if (this.playing) this.stall();
+      this.drawn = -1;
+      this.updateReadout(i);
+    }
+    step(d) {
+      if (!this.meta) return;
+      const i = this.frameAt(this.now()) + d;
+      this.pause();
+      this.seekFrame(i);
+    }
+    setRate(r) {
+      if (this.hasAudio) this.audio.playbackRate = r;
+      const t = this.now();
+      this.wall = { base: t, at: performance.now() };
+    }
+
+    loop() {
+      requestAnimationFrame(this.loop);
+      if (!this.meta || !this.count) return;
+      const t = this.now();
+      if (!this.hasAudio && this.playing && !this.stalled && t >= this.duration) { this.finish(); }
+      const i = this.frameAt(this.now());
+      this.schedule(i);
+      if (this.playing) {
+        const need = Math.min(this.bmpAhead, Math.max(2, Math.ceil(this.fps / 3)));
+        if (this.stalled) {
+          if (this.readyFrom(i, need)) this.resume();
+        } else if (!this.readyFrom(i, 1)) {
+          this.dropped++;
+          this.stall();
+        }
+      }
+      const e = this.cache.get(i);
+      if (i !== this.drawn && e && e.bitmap) {
+        this.ctx.drawImage(e.bitmap, 0, 0, this.canvas.width, this.canvas.height);
+        this.drawn = i;
+        this.updateReadout(i);
+      }
+    }
+
+    updateReadout(i) {
+      $('frameNo').textContent = String(i + 1);
+      $('curTime').textContent = fmtTime(i / this.fps);
+      if (!scrubbing) $('timeline').value = String(i);
+      window.__frameState = { frame: i, time: this.now(), audio: this.hasAudio ? this.audio.currentTime : null, playing: this.playing, stalled: this.stalled, dropped: this.dropped };
+    }
+    updateButton() {
+      $('playBtn').textContent = this.playing ? '❚❚' : '▶';
+      $('playBtn').setAttribute('aria-label', this.playing ? '暂停' : '播放');
     }
   }
-  async function demuxMP4(source, loadId) {
-    const MP4Box = await getMP4Box();
-    if (loadId !== state.loadId) throw new Error('cancelled');
-    const file = MP4Box.createFile(); const samples = [];
-    let track = null, config = null, resolveReady, rejectReady;
-    const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
-    file.onError = () => rejectReady(new Error('demux'));
-    file.onReady = info => {
-      track = info.videoTracks && info.videoTracks[0];
-      if (!track) { rejectReady(new Error('no-video')); return; }
-      try {
-        config = {
-          codec: track.codec.startsWith('vp08') ? 'vp8' : track.codec,
-          codedWidth: track.video.width, codedHeight: track.video.height,
-          description: decoderDescription(MP4Box, file, track)
-        };
-        file.setExtractionOptions(track.id, null, { nbSamples: 100 }); file.start(); resolveReady();
-      } catch (error) { rejectReady(error); }
+
+  const player = new Player();
+  let scrubbing = false;
+  let userMuted = false;
+
+  $('playBtn').addEventListener('click', () => player.toggle());
+  $('prevBtn').addEventListener('click', () => player.step(-1));
+  $('nextBtn').addEventListener('click', () => player.step(1));
+  $('rateSelect').addEventListener('change', () => player.setRate(player.rate));
+  $('timeline').addEventListener('input', () => { scrubbing = true; player.seekFrame(Number($('timeline').value)); });
+  $('timeline').addEventListener('change', () => { scrubbing = false; });
+  $('volume').addEventListener('input', () => { player.audio.volume = Number($('volume').value); userMuted = false; player.audio.muted = false; updateMute(); });
+  $('muteBtn').addEventListener('click', () => { userMuted = !userMuted; player.audio.muted = userMuted; updateMute(); });
+  function updateMute() { $('muteBtn').textContent = userMuted || player.audio.volume === 0 ? '🔇' : '🔊'; }
+  $('fsBtn').addEventListener('click', () => {
+    const st = $('stage');
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (st.requestFullscreen) st.requestFullscreen().catch(() => {});
+    else if (st.webkitRequestFullscreen) st.webkitRequestFullscreen();
+  });
+  document.addEventListener('keydown', e => {
+    if (!player.meta || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'range') return;
+    if (e.key === ' ') { e.preventDefault(); player.toggle(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); e.shiftKey ? player.seekFrame(player.frameAt(player.now()) - Math.round(player.fps * 5)) : player.step(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); e.shiftKey ? player.seekFrame(player.frameAt(player.now()) + Math.round(player.fps * 5)) : player.step(1); }
+    else if (e.key.toLowerCase() === 'm') $('muteBtn').click();
+    else if (e.key.toLowerCase() === 'f') $('fsBtn').click();
+  });
+
+  // ------------------------------------------------------------ library
+  let videos = [];
+  let pollTimer = 0;
+  const armed = new Set();   // ids whose delete button was pressed once
+
+  async function refresh() {
+    if (!key) { showKeyCard(); return; }
+    try {
+      const res = await api('/api/videos');
+      videos = res.videos;
+      setServer('ok', 'Mac mini 已连接');
+      $('keyCard').hidden = true;
+      render();
+    } catch (e) {
+      if (e.message !== 'key') setServer('bad', '连不上 Mac mini');
+    }
+    clearTimeout(pollTimer);
+    const busy = videos.some(v => ['queued', 'downloading', 'processing', 'uploading'].includes(v.status));
+    pollTimer = setTimeout(refresh, busy ? 1500 : 15000);
+  }
+
+  function statusLine(v) {
+    if (v.status === 'ready') {
+      return `${fmtTime(v.duration, false)} · ${fmtFps(v.fps)} · ${v.frames} 帧 · ${v.height}p · ${fmtBytes(v.bytes)}`;
+    }
+    if (v.status === 'error') return v.error || '失败';
+    const pct = v.progress ? ` ${Math.round(v.progress)}%` : '';
+    return (v.stage || v.status) + pct;
+  }
+
+  function render() {
+    const total = videos.reduce((a, v) => a + (v.bytes || 0), 0);
+    $('libInfo').textContent = videos.length ? `${videos.length} 部 · ${fmtBytes(total)}` : '';
+    $('libEmpty').hidden = videos.length > 0;
+    $('grid').innerHTML = videos.map(v => {
+      const ready = v.status === 'ready', busy = !ready && v.status !== 'error';
+      const thumb = ready
+        ? `<div class="thumb" data-play="${v.id}" style="background-image:url('${media(v.id, 'thumb.jpg')}')"><span class="dur">${fmtTime(v.duration, false)}</span></div>`
+        : `<div class="thumb pending">${busy ? '处理中…' : '处理失败'}</div>`;
+      return `<article class="item${player.meta && player.meta.id === v.id ? ' active' : ''}">
+        ${thumb}
+        <div class="item-body">
+          <div class="item-title" title="${esc(v.title)}">${esc(v.title || v.source)}</div>
+          ${busy ? `<div class="bar"><i style="width:${v.progress || 2}%"></i></div>` : ''}
+          <div class="item-meta${v.status === 'error' ? ' error' : ''}">${esc(statusLine(v))}</div>
+          <div class="item-actions">
+            ${ready ? `<button class="ghost" data-play="${v.id}">播放</button><a class="ghost" href="/api/videos/${v.id}/zip?k=${encodeURIComponent(key)}">下载 ZIP</a>` : ''}
+            ${busy ? `<button class="ghost" data-cancel="${v.id}">取消</button>` : ''}
+            ${v.status === 'error' && v.source.startsWith('http') ? `<button class="ghost" data-retry="${v.id}">重试</button>` : ''}
+            <button class="ghost danger${armed.has(v.id) ? ' confirm' : ''}" data-del="${v.id}">${armed.has(v.id) ? '确定删除？' : '删除'}</button>
+          </div>
+        </div>
+      </article>`;
+    }).join('');
+  }
+
+  $('grid').addEventListener('click', async e => {
+    const t = e.target.closest('[data-play],[data-del],[data-cancel],[data-retry]');
+    if (!t) return;
+    if (t.dataset.play) {
+      const v = videos.find(x => x.id === t.dataset.play);
+      if (v) { player.open(v); render(); $('playerCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    } else if (t.dataset.del) {
+      const id = t.dataset.del;
+      if (!armed.has(id)) {
+        armed.add(id); render();
+        setTimeout(() => { if (armed.delete(id)) render(); }, 4000);
+        return;
+      }
+      armed.delete(id);
+      if (player.meta && player.meta.id === id) { player.close(); $('playerCard').hidden = true; }
+      try { await api(`/api/videos/${id}`, { method: 'DELETE' }); } catch (err) { note('删除失败：' + err.message, true); }
+      refresh();
+    } else if (t.dataset.cancel) {
+      try { await api(`/api/videos/${t.dataset.cancel}/cancel`, { method: 'POST' }); } catch {}
+      refresh();
+    } else if (t.dataset.retry) {
+      const v = videos.find(x => x.id === t.dataset.retry);
+      if (v) submitUrl(v.source, v.requestFps, v.requestHeight).then(ok => ok && api(`/api/videos/${v.id}`, { method: 'DELETE' }).then(refresh));
+    }
+  });
+
+  // ------------------------------------------------------------ new video
+  async function submitUrl(url, fps, height) {
+    $('startBtn').disabled = true;
+    try {
+      await api('/api/videos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, fps, height }) });
+      note('已经交给 Mac mini 处理，下面可以看到进度。');
+      refresh();
+      return true;
+    } catch (e) {
+      if (e.message !== 'key') note('没能开始：' + e.message, true);
+      return false;
+    } finally { $('startBtn').disabled = false; }
+  }
+
+  $('newForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const url = $('urlInput').value.trim();
+    if (await submitUrl(url, Number($('fpsSelect').value), Number($('heightSelect').value))) $('urlInput').value = '';
+  });
+
+  $('fileInput').addEventListener('change', () => {
+    const f = $('fileInput').files[0];
+    $('fileInput').value = '';
+    if (!f) return;
+    const q = new URLSearchParams({ name: f.name, fps: $('fpsSelect').value, height: $('heightSelect').value });
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload?' + q);
+    xhr.setRequestHeader('X-Frame-Key', key);
+    xhr.upload.onprogress = ev => { if (ev.lengthComputable) note(`上传中 ${Math.round(ev.loaded / ev.total * 100)}%（${fmtBytes(ev.loaded)} / ${fmtBytes(ev.total)}）`); };
+    xhr.onload = () => {
+      if (xhr.status === 401) { showKeyCard(); return; }
+      if (xhr.status >= 200 && xhr.status < 300) { note('上传完成，Mac mini 开始处理。'); refresh(); }
+      else { let msg = `HTTP ${xhr.status}`; try { msg = JSON.parse(xhr.responseText).error || msg; } catch {} note('上传失败：' + msg, true); }
     };
-    file.onSamples = (_id, _user, batch) => { for (const sample of batch) samples.push(sample); };
-    if (source instanceof Blob) await feedLocalFile(source, file, loadId); else await feedRemoteFile(source, file, loadId);
-    file.flush(); await ready; await new Promise(resolve => setTimeout(resolve, 0));
-    if (!samples.length) throw new Error('no-samples');
-    const support = await VideoDecoder.isConfigSupported(config);
-    if (!support.supported) throw new Error('unsupported-codec');
-    samples.forEach((sample, index) => { sample.decodeIndex = index; });
-    const presentation = [...samples].sort((a, b) => a.cts - b.cts || a.dts - b.dts);
-    presentation.forEach((sample, index) => { sample.presentationIndex = index; });
-    const last = presentation[presentation.length - 1];
-    return { samples, presentation, config: support.config, duration: (last.cts + last.duration) / last.timescale };
-  }
-  function chunkFromSample(sample) {
-    return new EncodedVideoChunk({
-      type: sample.is_sync ? 'key' : 'delta', timestamp: Math.round(1e6 * sample.cts / sample.timescale),
-      duration: Math.round(1e6 * sample.duration / sample.timescale), data: sample.data
-    });
-  }
-  async function waitForDecoder(decoder, maxQueue = 16) {
-    while (decoder.state === 'configured' && decoder.decodeQueueSize > maxQueue) await new Promise(resolve => setTimeout(resolve, 4));
-  }
-  function drawVideoFrame(frame, index) {
-    const width = frame.displayWidth || frame.codedWidth, height = frame.displayHeight || frame.codedHeight;
-    if (els.canvas.width !== width || els.canvas.height !== height) { els.canvas.width = width; els.canvas.height = height; }
-    ctx.fillStyle = '#050507'; ctx.fillRect(0, 0, width, height); ctx.drawImage(frame, 0, 0, width, height);
-    state.currentIndex = index; updateReadout();
-  }
-  async function renderCanvasFrame(index) {
-    if (!state.ready || state.mode !== 'canvas') return;
-    stopCanvasPlayback(false); const token = state.playbackToken;
-    index = Math.max(0, Math.min(state.presentation.length - 1, index));
-    const target = state.presentation[index], targetTimestamp = Math.round(1e6 * target.cts / target.timescale);
-    let start = target.decodeIndex;
-    while (start > 0 && !state.samples[start].is_sync) start--;
-    let end = target.decodeIndex + 1;
-    while (end < state.samples.length && !state.samples[end].is_sync) end++;
-    let bestFrame = null, bestDiff = Infinity, decoderError = null;
-    const decoder = new VideoDecoder({
-      output: frame => {
-        const diff = Math.abs(frame.timestamp - targetTimestamp);
-        if (diff < bestDiff) { if (bestFrame) bestFrame.close(); bestFrame = frame; bestDiff = diff; } else frame.close();
-      }, error: error => { decoderError = error; }
-    });
-    state.decoder = decoder; decoder.configure(state.decoderConfig); setStatus('DECODING FRAME');
-    try {
-      for (let i = start; i < end; i++) { if (token !== state.playbackToken) throw new Error('cancelled'); decoder.decode(chunkFromSample(state.samples[i])); await waitForDecoder(decoder); }
-      await decoder.flush();
-      if (decoderError || !bestFrame) throw decoderError || new Error('decode');
-      if (token === state.playbackToken) drawVideoFrame(bestFrame, index);
-    } finally {
-      if (bestFrame) bestFrame.close(); if (decoder.state !== 'closed') decoder.close(); if (state.decoder === decoder) state.decoder = null; updatePlayButton();
-    }
-  }
-  async function runCanvasPlayback(token) {
-    const startSample = state.presentation[state.currentIndex]; let start = startSample.decodeIndex;
-    while (start > 0 && !state.samples[start].is_sync) start--;
-    let pumpDone = false, playbackError = null;
-    const decoder = new VideoDecoder({
-      output: frame => {
-        const timestamp = frame.timestamp;
-        const sample = state.timestampIndex.get(Math.round(timestamp));
-        if (!sample || sample.presentationIndex < state.currentIndex) frame.close();
-        else { state.frameQueue.push({ frame, index: sample.presentationIndex }); state.frameQueue.sort((a, b) => a.frame.timestamp - b.frame.timestamp); }
-      }, error: error => { playbackError = error; }
-    });
-    state.decoder = decoder; decoder.configure(state.decoderConfig);
-    const pump = (async () => {
-      try {
-        for (let i = start; i < state.samples.length && token === state.playbackToken; i++) {
-          while (token === state.playbackToken && (decoder.decodeQueueSize > 16 || state.frameQueue.length > 12)) await new Promise(resolve => setTimeout(resolve, 5));
-          if (token !== state.playbackToken) break; decoder.decode(chunkFromSample(state.samples[i]));
-        }
-        if (token === state.playbackToken) await decoder.flush();
-      } catch (error) { if (token === state.playbackToken) playbackError = error; }
-      pumpDone = true;
-    })();
-    while (token === state.playbackToken) {
-      if (playbackError) throw playbackError;
-      const item = state.frameQueue.shift();
-      if (!item) { if (pumpDone) break; await new Promise(resolve => setTimeout(resolve, 5)); continue; }
-      const sample = state.presentation[item.index];
-      const duration = Math.max(8, sample.duration / sample.timescale * 1000 / (Number(els.rate.value) || 1));
-      drawVideoFrame(item.frame, item.index); item.frame.close();
-      await new Promise(resolve => setTimeout(resolve, duration));
-    }
-    await pump; if (token === state.playbackToken) { state.playing = false; closeFrameQueue(); if (decoder.state !== 'closed') decoder.close(); state.decoder = null; updatePlayButton(); }
-  }
-  function startCanvasPlayback() {
-    stopCanvasPlayback(false); state.playing = true; const token = state.playbackToken; updatePlayButton();
-    runCanvasPlayback(token).catch(() => {
-      if (token !== state.playbackToken) return; stopCanvasPlayback(false);
-      updatePlayButton(); setStatus('DECODE ERROR', true); showMessage('播放解码失败。请尝试 H.264 编码的标准 MP4 文件。');
-    });
-  }
-  async function loadCanvasSource(source, label) {
-    resetSource(); hideMessage(); const loadId = ++state.loadId; state.mode = 'canvas';
-    els.loading.hidden = false; els.sourceName.textContent = label; setStatus('PREPARING WEBCODECS');
-    if (!('VideoDecoder' in window) || !('EncodedVideoChunk' in window)) {
-      els.loading.hidden = true; setStatus('UNSUPPORTED', true); showMessage('当前浏览器不支持 WebCodecs。请使用最新版 Chrome、Edge 或其他支持 WebCodecs 的浏览器。'); return;
-    }
-    try {
-      const result = await demuxMP4(source, loadId); if (loadId !== state.loadId) return;
-      state.samples = result.samples; state.presentation = result.presentation; state.decoderConfig = result.config; state.duration = result.duration;
-      state.timestampIndex = new Map(result.presentation.map(sample => [Math.round(1e6 * sample.cts / sample.timescale), sample]));
-      state.ready = true; els.loading.hidden = true; els.empty.hidden = true; els.frameReadout.hidden = false; setControls(true);
-      await renderCanvasFrame(0);
-    } catch (error) {
-      if (error.message === 'cancelled') return;
-      state.ready = false; els.loading.hidden = true; setControls(false); setStatus('MP4 ERROR', true);
-      const codec = error.message === 'unsupported-codec';
-      showMessage(codec ? '这个 MP4 的视频编码不受当前浏览器支持。建议使用 H.264/AVC 编码。' : '无法解析这个 MP4。直链必须允许跨域读取和 HTTP Range 请求，也可以改用本地 MP4。');
-    }
-  }
+    xhr.onerror = () => note('上传失败：连不上 Mac mini', true);
+    xhr.send(f);
+    note('上传中 0%');
+  });
 
-  function parseStartTime(value) {
-    if (!value) return 0; if (/^\d+(?:\.\d+)?$/.test(value)) return Number(value);
-    const match = String(value).toLowerCase().match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$/);
-    return match ? (Number(match[1]) || 0) * 3600 + (Number(match[2]) || 0) * 60 + (Number(match[3]) || 0) : 0;
-  }
-  function parseYouTubeUrl(raw) {
-    let parsed; try { parsed = new URL(raw); } catch { return null; }
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, ''); let id = '';
-    if (host === 'youtu.be') id = parsed.pathname.split('/').filter(Boolean)[0] || '';
-    else if (['youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(host)) {
-      if (parsed.pathname === '/watch') id = parsed.searchParams.get('v') || '';
-      else { const parts = parsed.pathname.split('/').filter(Boolean); if (['shorts', 'embed', 'live'].includes(parts[0])) id = parts[1] || ''; }
-    } else if (host === 'youtube-nocookie.com') { const parts = parsed.pathname.split('/').filter(Boolean); if (parts[0] === 'embed') id = parts[1] || ''; }
-    else return null;
-    if (!/^[A-Za-z0-9_-]{11}$/.test(id)) throw new Error('youtube-id');
-    return { id, start: parseStartTime(parsed.searchParams.get('t') || parsed.searchParams.get('start') || '') };
-  }
-  function loadYouTubeApi() {
-    if (window.YT && window.YT.Player) return Promise.resolve(window.YT); if (youtubeApiPromise) return youtubeApiPromise;
-    youtubeApiPromise = new Promise((resolve, reject) => {
-      const previousReady = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => { if (typeof previousReady === 'function') previousReady(); resolve(window.YT); };
-      const script = document.createElement('script'); script.src = 'https://www.youtube.com/iframe_api'; script.async = true;
-      script.onerror = () => { youtubeApiPromise = null; reject(new Error('youtube-api')); }; document.head.appendChild(script);
-    }); return youtubeApiPromise;
-  }
-  async function loadYouTubeSource(video) {
-    resetSource(); hideMessage(); const loadId = ++state.loadId; state.mode = 'youtube';
-    els.loading.hidden = false; setStatus('LOADING YOUTUBE'); els.sourceName.textContent = `YOUTUBE · ${video.id}`;
-    try {
-      const YT = await loadYouTubeApi(); if (loadId !== state.loadId) return; els.youtubeLayer.hidden = false; els.canvas.hidden = true;
-      state.youtubePlayer = new YT.Player('youtubePlayer', {
-        width: '100%', height: '100%', videoId: video.id,
-        playerVars: { playsinline: 1, controls: 1, rel: 0, origin: location.origin, start: Math.floor(video.start) },
-        events: {
-          onReady: event => {
-            if (loadId !== state.loadId) return; state.ready = true; els.loading.hidden = true; els.empty.hidden = true; els.frameReadout.hidden = false; setControls(true);
-            event.target.setPlaybackRate(1); if (video.start > 0) event.target.seekTo(video.start, true); event.target.pauseVideo(); updateReadout(video.start); updatePlayButton();
-          },
-          onStateChange: event => {
-            if (loadId !== state.loadId || !state.ready) return; if (event.data === 1) startYoutubeTimer(); else { stopYoutubeTimer(); updateReadout(); }
-            if (event.data === 3) setStatus('BUFFERING'); else updatePlayButton();
-          },
-          onError: event => {
-            if (loadId !== state.loadId) return; state.ready = false; els.loading.hidden = true; setControls(false); setStatus('YOUTUBE ERROR', true);
-            showMessage(event.data === 101 || event.data === 150 ? '该视频禁止在其他网页嵌入播放。' : 'YouTube 无法播放这个视频；它可能是私密、已删除或受地区限制。');
-          }
-        }
-      });
-    } catch { if (loadId !== state.loadId) return; els.loading.hidden = true; setControls(false); setStatus('YOUTUBE ERROR', true); showMessage('无法连接 YouTube 播放器。请检查网络或内容拦截设置。'); }
-  }
-  function validateMP4Url(raw) {
-    const parsed = new URL(raw); if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('protocol');
-    if (location.protocol === 'https:' && parsed.protocol === 'http:') throw new Error('mixed-content'); return parsed.href;
-  }
-  function seekCanvasByTime(seconds) {
-    let low = 0, high = state.presentation.length - 1;
-    while (low < high) { const mid = Math.floor((low + high) / 2); if (state.presentation[mid].cts / state.presentation[mid].timescale < seconds) low = mid + 1; else high = mid; }
-    renderCanvasFrame(low).catch(() => showMessage('无法解码所选帧。'));
-  }
-  function stepFrame(direction) {
-    if (!state.ready) return;
-    if (state.mode === 'canvas') { renderCanvasFrame(state.currentIndex + direction).catch(() => showMessage('无法解码所选帧。')); return; }
-    state.youtubePlayer.pauseVideo(); stopYoutubeTimer(); const target = currentTimeValue() + direction / selectedFps(); state.youtubePlayer.seekTo(Math.max(0, target), true); updateReadout(target); setStatus('FRAME STEP');
-  }
-  function skip(seconds) {
-    if (!state.ready) return; const target = Math.max(0, Math.min(durationValue(), currentTimeValue() + seconds));
-    if (state.mode === 'canvas') seekCanvasByTime(target); else { state.youtubePlayer.seekTo(target, true); updateReadout(target); }
-  }
-  function togglePlayback() {
-    if (!state.ready) return; hideMessage();
-    if (state.mode === 'canvas') { state.playing ? stopCanvasPlayback() : startCanvasPlayback(); return; }
-    try { isPlaying() ? state.youtubePlayer.pauseVideo() : state.youtubePlayer.playVideo(); } catch { showMessage('播放被浏览器或设备策略阻止。请直接点击 YouTube 播放器后再试。'); }
-    window.setTimeout(updatePlayButton, 80);
-  }
-
-  els.form.addEventListener('submit', event => {
-    event.preventDefault(); hideMessage(); const raw = els.url.value.trim();
-    try { const youtube = parseYouTubeUrl(raw); if (youtube) { loadYouTubeSource(youtube); return; } const url = validateMP4Url(raw); loadCanvasSource(url, sourceName(url)); }
-    catch (error) {
-      if (error.message === 'youtube-id') showMessage('这个 YouTube 链接缺少有效的视频 ID。');
-      else if (error.message === 'mixed-content') showMessage('HTTPS 页面不能读取 HTTP 文件，请改用 HTTPS 地址。');
-      else showMessage('请输入完整的 YouTube 链接或 MP4 直链。');
-    }
-  });
-  els.file.addEventListener('change', () => {
-    const file = els.file.files && els.file.files[0]; if (!file) return; loadCanvasSource(file, file.name);
-    els.url.value = ''; els.clearUrl.hidden = true; els.file.value = '';
-  });
-  els.url.addEventListener('input', () => { els.clearUrl.hidden = !els.url.value; });
-  els.clearUrl.addEventListener('click', () => { els.url.value = ''; els.clearUrl.hidden = true; els.url.focus(); });
-  els.prev.addEventListener('click', () => stepFrame(-1)); els.next.addEventListener('click', () => stepFrame(1)); els.play.addEventListener('click', togglePlayback);
-  els.timeline.addEventListener('input', () => {
-    if (!state.ready || durationValue() <= 0) return; const target = Number(els.timeline.value) / 1000 * durationValue();
-    if (state.mode === 'canvas') seekCanvasByTime(target); else { state.youtubePlayer.seekTo(target, true); updateReadout(target); }
-  });
-  els.rate.addEventListener('change', () => { if (state.mode === 'youtube') { try { state.youtubePlayer.setPlaybackRate(Number(els.rate.value) || 1); } catch {} } });
-  els.fps.addEventListener('change', () => updateReadout());
-  els.mute.addEventListener('click', () => {
-    if (state.mode !== 'youtube') return; const muted = !state.youtubePlayer.isMuted(); muted ? state.youtubePlayer.mute() : state.youtubePlayer.unMute();
-    els.mute.classList.toggle('muted', muted); els.mute.setAttribute('aria-label', muted ? '取消静音' : '静音');
-  });
-  els.fullscreen.addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await els.stage.requestFullscreen(); } catch { showMessage('当前浏览器不允许进入全屏模式。', 'info'); } });
-  document.addEventListener('keydown', event => {
-    if (event.target.matches('input, select, button')) return;
-    if (event.code === 'Space') { event.preventDefault(); togglePlayback(); }
-    else if (event.key === 'ArrowLeft') { event.preventDefault(); stepFrame(-1); }
-    else if (event.key === 'ArrowRight') { event.preventDefault(); stepFrame(1); }
-    else if (event.key.toLowerCase() === 'j') skip(-5); else if (event.key.toLowerCase() === 'l') skip(5);
-    else if (event.key.toLowerCase() === 'm' && state.mode === 'youtube') els.mute.click(); else if (event.key.toLowerCase() === 'f') els.fullscreen.click();
-  });
-  resetSource();
+  refresh();
 })();
