@@ -97,6 +97,8 @@
     get fps() { return this.meta ? this.meta.fps : 30; }
     get count() { return this.meta ? this.meta.frames : 0; }
     get duration() { return this.count / this.fps; }
+    // Last moment of the clock: the frames start audioOffset into the audio.
+    get end() { return this.duration + (this.hasAudio ? Math.max(0, this.meta.audioOffset || 0) : 0); }
     get rate() { return Number($('rateSelect').value) || 1; }
     get hasAudio() { return !!(this.meta && this.meta.hasAudio); }
 
@@ -113,8 +115,8 @@
         this.audio.load();
       }
       const px = this.canvas.width * this.canvas.height * 4;
-      // Decoded bitmaps are big: about 120 MB of them, between 6 and 1.5 s worth.
-      this.bmpAhead = Math.max(6, Math.min(Math.ceil(this.fps * 1.5), Math.floor(120e6 / px)));
+      // Decoded bitmaps are big: at most about 120 MB of them (1.5 s at most).
+      this.bmpAhead = Math.max(2, Math.min(Math.ceil(this.fps * 1.5), Math.floor(120e6 / px)));
       this.blobAhead = Math.max(this.bmpAhead, Math.ceil(this.fps * 6));
       this.wall = { base: 0, at: performance.now() };
       this.drawn = -1;
@@ -154,7 +156,7 @@
       return this.wall.base + (performance.now() - this.wall.at) / 1000 * this.rate;
     }
     setTime(t) {
-      t = Math.max(0, Math.min(this.duration, t));
+      t = Math.max(0, Math.min(this.end, t));
       if (this.hasAudio) { try { this.audio.currentTime = t; } catch {} this.smooth = { t, at: performance.now() }; }
       this.wall = { base: t, at: performance.now() };
     }
