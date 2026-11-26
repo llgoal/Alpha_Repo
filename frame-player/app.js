@@ -16,15 +16,31 @@
   };
 
   // ------------------------------------------------------------ key + API
+  // Some browsers (car browsers, private mode) block localStorage, so the key
+  // is also kept in a cookie, and in the address when neither works.
+  function saveKey(k) {
+    try { localStorage.setItem(KEY_STORE, k); } catch {}
+    try { document.cookie = `fskey=${encodeURIComponent(k)}; max-age=315360000; path=/; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`; } catch {}
+    return storedKey() === k;
+  }
+  function storedKey() {
+    try { const k = localStorage.getItem(KEY_STORE); if (k) return k; } catch {}
+    try { const m = document.cookie.match(/(?:^|;\s*)fskey=([^;]+)/); if (m) return decodeURIComponent(m[1]); } catch {}
+    return '';
+  }
+  function cleanKey(raw) {
+    raw = String(raw || '').trim();
+    const m = raw.match(/key=([^&\s]+)/);   // a whole pasted link works too
+    return decodeURIComponent(m ? m[1] : raw);
+  }
   function readKey() {
     const m = location.hash.match(/key=([^&]+)/);
     if (m) {
       const k = decodeURIComponent(m[1]);
-      try { localStorage.setItem(KEY_STORE, k); } catch {}
-      history.replaceState(null, '', location.pathname + location.search);
+      if (saveKey(k)) history.replaceState(null, '', location.pathname + location.search);
       return k;
     }
-    try { return localStorage.getItem(KEY_STORE) || ''; } catch { return ''; }
+    return storedKey();
   }
   let key = readKey();
 
@@ -39,11 +55,17 @@
   const media = (id, file) => `/media/${id}/${file}?k=${encodeURIComponent(key)}`;
   const frameName = i => String(i + 1).padStart(6, '0') + '.jpg';
 
-  function showKeyCard() { $('keyCard').hidden = false; setServer('bad', '需要密钥'); }
+  let keyTried = false;
+  function showKeyCard() {
+    $('keyCard').hidden = false;
+    setServer('bad', keyTried ? '密钥不对' : '需要密钥');
+    if (keyTried) $('keyHint').hidden = false;
+  }
   $('keyForm').addEventListener('submit', e => {
     e.preventDefault();
-    key = $('keyInput').value.trim();
-    try { localStorage.setItem(KEY_STORE, key); } catch {}
+    key = cleanKey($('keyInput').value);
+    if (!saveKey(key)) history.replaceState(null, '', location.pathname + location.search + '#key=' + encodeURIComponent(key));
+    keyTried = true;
     $('keyCard').hidden = true;
     refresh();
   });
