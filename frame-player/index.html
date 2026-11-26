@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#09090c">
   <meta name="description" content="把视频拆成一帧一帧的图片，再按帧率配着声音播放。">
   <title>Frame Studio</title>
-  <link rel="stylesheet" href="./styles.css?v=3">
+  <link rel="stylesheet" href="./styles.css?v=4">
 </head>
 <body>
   <main class="shell">
@@ -63,17 +63,16 @@
         <span id="durTime">0:00.00</span>
       </div>
       <div class="controls">
-        <button class="icon" id="prevBtn" title="上一帧 (←)" aria-label="上一帧">⏮</button>
-        <button class="icon play" id="playBtn" title="播放/暂停 (空格)" aria-label="播放">▶</button>
-        <button class="icon" id="nextBtn" title="下一帧 (→)" aria-label="下一帧">⏭</button>
-        <select id="rateSelect" aria-label="速度">
+        <button class="ctl" id="prevBtn" title="上一帧 (←)" aria-label="上一帧"></button>
+        <button class="ctl play" id="playBtn" title="播放/暂停 (空格)" aria-label="播放"></button>
+        <button class="ctl" id="nextBtn" title="下一帧 (→)" aria-label="下一帧"></button>
+        <select class="ctl rate" id="rateSelect" aria-label="速度">
           <option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="0.75">0.75×</option>
           <option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option>
         </select>
-        <button class="icon" id="muteBtn" title="静音 (M)" aria-label="静音">🔊</button>
-        <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="音量">
         <span class="spacer"></span>
-        <button class="icon" id="fsBtn" title="全屏 (F)" aria-label="全屏">⛶</button>
+        <button class="ctl" id="muteBtn" title="静音 (M)" aria-label="静音"></button>
+        <button class="ctl" id="fsBtn" title="全屏 (F)" aria-label="全屏"></button>
       </div>
       <div class="now">
         <strong id="nowTitle"></strong>
@@ -87,6 +86,6 @@
       <p class="empty" id="libEmpty" hidden>还没有影片。贴一个 YouTube 链接开始吧。</p>
     </section>
   </main>
-  <script src="./app.js?v=3"></script>
+  <script src="./app.js?v=4"></script>
 </body>
 </html>

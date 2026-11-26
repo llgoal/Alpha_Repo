@@ -3,6 +3,17 @@
 
   const $ = id => document.getElementById(id);
   const KEY_STORE = 'framestudio.key';
+  const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+  const ICONS = {
+    play: svg('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>'),
+    pause: svg('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>'),
+    prev: svg('<rect x="5" y="5" width="2.5" height="14" rx="1"/><path d="M19 6.2v11.6a.9.9 0 0 1-1.4.75L9.3 12.75a.9.9 0 0 1 0-1.5l8.3-5.8a.9.9 0 0 1 1.4.75z"/>'),
+    next: svg('<rect x="16.5" y="5" width="2.5" height="14" rx="1"/><path d="M5 6.2v11.6a.9.9 0 0 0 1.4.75l8.3-5.8a.9.9 0 0 0 0-1.5L6.4 5.45A.9.9 0 0 0 5 6.2z"/>'),
+    sound: svg('<path d="M4 9.5v5a1 1 0 0 0 1 1h3l4.3 3.6a.8.8 0 0 0 1.3-.6V5.5a.8.8 0 0 0-1.3-.6L8 8.5H5a1 1 0 0 0-1 1z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'),
+    muted: svg('<path d="M4 9.5v5a1 1 0 0 0 1 1h3l4.3 3.6a.8.8 0 0 0 1.3-.6V5.5a.8.8 0 0 0-1.3-.6L8 8.5H5a1 1 0 0 0-1 1z"/><path d="M17 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'),
+    fs: svg('<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
+    fsExit: svg('<path d="M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
+  };
 
   // ------------------------------------------------------------ key + API
   function readKey() {
@@ -326,7 +337,7 @@
       window.__frameState = { frame: i, time: this.now(), audio: this.hasAudio ? this.audio.currentTime : null, playing: this.playing, stalled: this.stalled, dropped: this.dropped };
     }
     updateButton() {
-      $('playBtn').textContent = this.playing ? '❚❚' : '▶';
+      $('playBtn').innerHTML = this.playing ? ICONS.pause : ICONS.play;
       $('playBtn').setAttribute('aria-label', this.playing ? '暂停' : '播放');
     }
   }
@@ -341,15 +352,43 @@
   $('rateSelect').addEventListener('change', () => player.setRate(player.rate));
   $('timeline').addEventListener('input', () => { scrubbing = true; player.seekFrame(Number($('timeline').value)); });
   $('timeline').addEventListener('change', () => { scrubbing = false; });
-  $('volume').addEventListener('input', () => { player.audio.volume = Number($('volume').value); userMuted = false; player.audio.muted = false; updateMute(); });
   $('muteBtn').addEventListener('click', () => { userMuted = !userMuted; player.audio.muted = userMuted; updateMute(); });
-  function updateMute() { $('muteBtn').textContent = userMuted || player.audio.volume === 0 ? '🔇' : '🔊'; }
+  function updateMute() { $('muteBtn').innerHTML = userMuted ? ICONS.muted : ICONS.sound; }
+
+  // Fullscreen: the real thing where the browser allows it on a page element
+  // (desktop, Android, iPad); iPhone Safari only allows it for <video>, so
+  // there the player card is stretched over the whole screen instead.
+  const card = $('playerCard');
+  const nativeFs = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  let fakeFs = false;
+  function updateFs() {
+    const on = fakeFs || fsElement() === card;
+    card.classList.toggle('is-fs', on);
+    document.body.classList.toggle('fs-lock', on);
+    $('fsBtn').innerHTML = on ? ICONS.fsExit : ICONS.fs;
+    $('fsBtn').setAttribute('aria-label', on ? '退出全屏' : '全屏');
+  }
+  function setFake(on) {
+    fakeFs = on;
+    updateFs();
+    if (on && screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+  }
   $('fsBtn').addEventListener('click', () => {
-    const st = $('stage');
-    if (document.fullscreenElement) document.exitFullscreen();
-    else if (st.requestFullscreen) st.requestFullscreen().catch(() => {});
-    else if (st.webkitRequestFullscreen) st.webkitRequestFullscreen();
+    if (fakeFs) return setFake(false);
+    if (fsElement()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+    if (nativeFs) {
+      const req = card.requestFullscreen || card.webkitRequestFullscreen;
+      try {
+        const p = req.call(card);
+        if (p && p.then) p.then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); }).catch(() => setFake(true));
+      } catch { setFake(true); }
+    } else setFake(true);
   });
+  document.addEventListener('fullscreenchange', updateFs);
+  document.addEventListener('webkitfullscreenchange', updateFs);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && fakeFs) setFake(false); });
+
   document.addEventListener('keydown', e => {
     if (!player.meta || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'range') return;
     if (e.key === ' ') { e.preventDefault(); player.toggle(); }
@@ -480,5 +519,7 @@
     note('上传中 0%');
   });
 
+  $('prevBtn').innerHTML = ICONS.prev; $('nextBtn').innerHTML = ICONS.next; $('playBtn').innerHTML = ICONS.play;
+  updateMute(); updateFs();
   refresh();
 })();
