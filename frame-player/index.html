@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#09090c">
   <meta name="description" content="把视频拆成一帧一帧的图片，再按帧率配着声音播放。">
   <title>Frame Studio</title>
-  <link rel="stylesheet" href="./styles.css?v=2">
+  <link rel="stylesheet" href="./styles.css?v=3">
 </head>
 <body>
   <main class="shell">
@@ -55,7 +55,6 @@
     <section class="card player-card" id="playerCard" hidden>
       <div class="stage" id="stage">
         <canvas id="canvas"></canvas>
-        <div class="badge frame-badge"><span>FRAME</span><strong id="frameNo">0</strong></div>
         <div class="badge buffer-badge" id="bufferBadge" hidden>缓冲中…</div>
       </div>
       <div class="timeline-row">
@@ -88,6 +87,6 @@
       <p class="empty" id="libEmpty" hidden>还没有影片。贴一个 YouTube 链接开始吧。</p>
     </section>
   </main>
-  <script src="./app.js?v=2"></script>
+  <script src="./app.js?v=3"></script>
 </body>
 </html>

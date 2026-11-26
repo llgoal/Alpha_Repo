@@ -321,7 +321,6 @@
     }
 
     updateReadout(i) {
-      $('frameNo').textContent = String(i + 1);
       $('curTime').textContent = fmtTime(i / this.fps);
       if (!scrubbing) $('timeline').value = String(i);
       window.__frameState = { frame: i, time: this.now(), audio: this.hasAudio ? this.audio.currentTime : null, playing: this.playing, stalled: this.stalled, dropped: this.dropped };
