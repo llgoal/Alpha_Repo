@@ -10,6 +10,7 @@ GET    /api/videos/<id>           meta (status, progress, fps, frames, ...)
 POST   /api/videos                JSON {"url", "fps", "height"}: download and process
 POST   /api/upload?name=&fps=&height=   body = the video file: process it
 POST   /api/videos/<id>/cancel    stop a queued or running job
+POST   /api/videos/<id>/position  {"t": seconds}: where playback stopped
 DELETE /api/videos/<id>           delete the video and all its frames
 GET    /media/<id>/chunk?from=0&n=30  many frames in one response (see send_chunk)
 GET    /media/<id>/frames/000001.jpg, /media/<id>/audio.m4a, /media/<id>/thumb.jpg
@@ -650,6 +651,17 @@ class Handler(SimpleHTTPRequestHandler):
             meta = update_meta(meta['id'], status='queued', stage='Waiting')
             JOBS.add(meta['id'])
             return self.send_json(200, dict(meta, ok=True))
+        m = re.match(r'^/api/videos/([a-f0-9]{12})/position$', path)
+        if m:
+            # Where playback stopped, so any device can continue from there.
+            try:
+                t = max(0.0, float(self.read_json().get('t') or 0))
+            except (TypeError, ValueError):
+                return self.send_json(400, {'ok': False, 'error': 't'})
+            meta = update_meta(m.group(1), position=round(t, 2), watchedAt=time.time())
+            if not meta:
+                return self.send_json(404, {'ok': False, 'error': 'not found'})
+            return self.send_json(200, {'ok': True})
         m = re.match(r'^/api/videos/([a-f0-9]{12})/cancel$', path)
         if m:
             vid = m.group(1)

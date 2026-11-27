@@ -271,11 +271,18 @@
       $('nowInfo').textContent = `${fmtFps(meta.fps)} · ${meta.frames} frames · ${meta.width}×${meta.height}` + (meta.hasAudio ? ' · sound' : ' · no sound')
         + (mbps ? ` · needs about ${mbps.toFixed(mbps < 10 ? 1 : 0)} Mbps` : '');
       $('playerCard').hidden = false;
-      this.seekFrame(0);
+      // Continue where it was left, on this or another device.
+      const pos = Number(meta.position) || 0;
+      const resumeAt = pos > 3 && pos < this.duration - 3 ? pos : 0;
+      this.saved = { t: resumeAt, at: performance.now() };
+      this.seekFrame(Math.round(resumeAt * this.fps));
+      $('resumeInfo').hidden = !resumeAt;
+      if (resumeAt) $('resumeText').textContent = `Continuing from ${fmtTime(resumeAt, false)}`;
     }
 
     close() {
       this.pause();
+      if (this.meta && this.saved) savePosition(this.meta.id, this.frameAt(this.now()) / this.fps);
       this.gen++;
       for (const e of this.cache.values()) if (e.bitmap) e.bitmap.close();
       this.cache.clear();
@@ -443,6 +450,18 @@
       $('bufferBadge').hidden = true;
       this.updateButton();
       this.updateReadout(this.frameAt(this.now()));
+      savePosition(this.meta.id, 0);   // watched to the end: next time from the start
+      this.saved = { t: 0, at: performance.now() };
+    }
+    // Save the position every 5 s while playing, and shortly after a pause,
+    // step or seek.
+    maybeSave() {
+      if (!this.meta || !this.saved) return;
+      const t = this.frameAt(this.now()) / this.fps, p = performance.now();
+      if (Math.abs(t - this.saved.t) < 1) return;
+      if (p - this.saved.at < (this.playing ? 5000 : 1000)) return;
+      this.saved = { t, at: p };
+      savePosition(this.meta.id, t);
     }
     resume() {
       this.stalled = false;
@@ -489,6 +508,7 @@
       if (!this.hasAudio && this.playing && !this.stalled && t >= this.duration) { this.finish(); }
       const i = this.frameAt(this.now());
       this.schedule(i);
+      this.maybeSave();
       if (this.playing) {
         if (this.stalled) {
           // After running dry, wait for a few seconds of frames, so it does
@@ -518,11 +538,25 @@
     }
   }
 
+  function savePosition(id, t) {
+    const v = videos.find(x => x.id === id);
+    if (v) v.position = t;
+    fetch(`/api/videos/${id}/position`, {
+      method: 'POST', keepalive: true,
+      headers: { 'X-Frame-Key': key, 'Content-Type': 'application/json' }, body: JSON.stringify({ t }),
+    }).catch(() => {});
+  }
+  // Leaving the page (or the car screen turning off) saves too.
+  const saveNow = () => { if (player.meta) { const t = player.frameAt(player.now()) / player.fps; player.saved = { t, at: performance.now() }; savePosition(player.meta.id, t); } };
+  window.addEventListener('pagehide', saveNow);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+
   const player = new Player();
   let scrubbing = false;
   let userMuted = false;
 
   $('playBtn').addEventListener('click', () => player.toggle());
+  $('restartBtn').addEventListener('click', () => { player.seekFrame(0); $('resumeInfo').hidden = true; });
   $('prevBtn').addEventListener('click', () => player.step(-1));
   $('nextBtn').addEventListener('click', () => player.step(1));
   $('rateSelect').addEventListener('change', () => player.setRate(player.rate));
@@ -605,6 +639,8 @@
     return label + pct;
   }
 
+  const watched = v => v.status === 'ready' && v.position > 3 && v.position < v.duration - 3;
+
   function render() {
     const total = videos.reduce((a, v) => a + (v.bytes || 0), 0);
     $('libInfo').textContent = videos.length ? `${videos.length} video${videos.length === 1 ? '' : 's'} · ${fmtBytes(total)}` : '';
@@ -612,7 +648,7 @@
     $('grid').innerHTML = videos.map(v => {
       const ready = v.status === 'ready', busy = !ready && v.status !== 'error';
       const thumb = ready
-        ? `<div class="thumb" data-play="${v.id}" style="background-image:url('${media(v.id, 'thumb.jpg')}')"><span class="dur">${fmtTime(v.duration, false)}</span></div>`
+        ? `<div class="thumb" data-play="${v.id}" style="background-image:url('${media(v.id, 'thumb.jpg')}')"><span class="dur">${fmtTime(v.duration, false)}</span>${watched(v) ? `<span class="watched"><i style="width:${Math.min(100, v.position / v.duration * 100)}%"></i></span>` : ''}</div>`
         : `<div class="thumb pending">${busy ? 'Processing…' : 'Failed'}</div>`;
       return `<article class="item${player.meta && player.meta.id === v.id ? ' active' : ''}">
         ${thumb}
@@ -621,7 +657,7 @@
           ${busy ? `<div class="bar"><i style="width:${v.progress || 2}%"></i></div>` : ''}
           <div class="item-meta${v.status === 'error' ? ' error' : ''}">${esc(statusLine(v))}</div>
           <div class="item-actions">
-            ${ready ? `<button class="ghost" data-play="${v.id}">Play</button><a class="ghost" href="/api/videos/${v.id}/zip?k=${encodeURIComponent(key)}">Download ZIP</a>` : ''}
+            ${ready ? `<button class="ghost" data-play="${v.id}">${watched(v) ? `Continue ${fmtTime(v.position, false)}` : 'Play'}</button><a class="ghost" href="/api/videos/${v.id}/zip?k=${encodeURIComponent(key)}">Download ZIP</a>` : ''}
             ${busy ? `<button class="ghost" data-cancel="${v.id}">Cancel</button>` : ''}
             ${v.status === 'error' && v.source.startsWith('http') ? `<button class="ghost" data-retry="${v.id}">Retry</button>` : ''}
             <button class="ghost danger${armed.has(v.id) ? ' confirm' : ''}" data-del="${v.id}">${armed.has(v.id) ? 'Delete?' : 'Delete'}</button>
@@ -636,7 +672,7 @@
     if (!t) return;
     if (t.dataset.play) {
       const v = videos.find(x => x.id === t.dataset.play);
-      if (v) { player.open(v); render(); $('playerCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      if (v) { if (player.meta) saveNow(); player.open(v); render(); $('playerCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     } else if (t.dataset.del) {
       const id = t.dataset.del;
       if (!armed.has(id)) {

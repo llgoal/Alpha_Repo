@@ -107,6 +107,8 @@ class ServerTest(unittest.TestCase):
         self.assertGreater(first, 0)
         code, z = self.req('/api/videos/%s/zip' % m['id'], raw=True)
         self.assertEqual(z[:2], b'PK')
+        self.assertEqual(self.req('/api/videos/%s/position' % m['id'], {'t': 1.25})[0], 200)
+        self.assertEqual(self.req('/api/videos/' + m['id'])[1]['position'], 1.25)
         self.assertEqual(self.req('/api/videos/' + m['id'], method='DELETE')[0], 200)
         self.assertEqual(self.req('/api/videos/' + m['id'])[0], 404)
 

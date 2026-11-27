@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#09090c">
   <meta name="description" content="Turns a video into frame images and plays them back at their frame rate with sound.">
   <title>Frame Studio</title>
-  <link rel="stylesheet" href="./styles.css?v=6">
+  <link rel="stylesheet" href="./styles.css?v=7">
 </head>
 <body>
   <main class="shell">
@@ -78,6 +78,7 @@
       </div>
       <div class="now">
         <strong id="nowTitle"></strong>
+        <span class="resume" id="resumeInfo" hidden><span id="resumeText"></span> · <button class="link" id="restartBtn" type="button">Start over</button></span>
         <span id="nowInfo"></span>
       </div>
     </section>
@@ -88,6 +89,6 @@
       <p class="empty" id="libEmpty" hidden>No videos yet. Paste a YouTube link to start.</p>
     </section>
   </main>
-  <script src="./app.js?v=9"></script>
+  <script src="./app.js?v=10"></script>
 </body>
 </html>

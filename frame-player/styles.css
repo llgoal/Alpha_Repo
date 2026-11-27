@@ -127,3 +127,8 @@ body.fs-lock { overflow: hidden; }
   .ctl { min-width: 40px; padding: 0 8px; }
   .ctl.play { min-width: 50px; }
 }
+
+.thumb .watched { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255, 255, 255, .25); }
+.thumb .watched i { display: block; height: 100%; background: var(--violet); }
+.now .resume { color: var(--violet-2); }
+.link { background: none; border: 0; padding: 0; color: var(--violet-2); text-decoration: underline; cursor: pointer; font-size: inherit; }
