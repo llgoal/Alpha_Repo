@@ -97,6 +97,14 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(jpg[:2], b'\xff\xd8')
         code, _ = self.req('/media/%s/audio.m4a?k=%s' % (m['id'], self.key), key=False, raw=True)
         self.assertEqual(code, 200)
+        code, chunk = self.req('/media/%s/chunk?from=40&n=30' % m['id'], raw=True)
+        import struct
+        k = struct.unpack('>I', chunk[:4])[0]
+        self.assertEqual(k, 8)   # frames 41..48, the last ones
+        first = struct.unpack('>I', chunk[4:8])[0]
+        self.assertEqual(chunk[4 + 4 * k:4 + 4 * k + 2], b'\xff\xd8')
+        self.assertEqual(len(chunk), 4 + 4 * k + sum(struct.unpack('>%dI' % k, chunk[4:4 + 4 * k])))
+        self.assertGreater(first, 0)
         code, z = self.req('/api/videos/%s/zip' % m['id'], raw=True)
         self.assertEqual(z[:2], b'PK')
         self.assertEqual(self.req('/api/videos/' + m['id'], method='DELETE')[0], 200)

@@ -11,6 +11,7 @@ POST   /api/videos                JSON {"url", "fps", "height"}: download and pr
 POST   /api/upload?name=&fps=&height=   body = the video file: process it
 POST   /api/videos/<id>/cancel    stop a queued or running job
 DELETE /api/videos/<id>           delete the video and all its frames
+GET    /media/<id>/chunk?from=0&n=30  many frames in one response (see send_chunk)
 GET    /media/<id>/frames/000001.jpg, /media/<id>/audio.m4a, /media/<id>/thumb.jpg
 GET    /api/videos/<id>/zip       all frames + audio as a ZIP download
 
@@ -26,6 +27,7 @@ import re
 import secrets
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import threading
@@ -306,7 +308,7 @@ def extract(vid, src, jobs):
     update_meta(vid, status='processing', stage='拆帧中', progress=0, duration=info['duration'],
                 hasAudio=info['hasAudio'])
     cmd = [FFMPEG, '-hide_banner', '-nostdin', '-y', '-i', str(src),
-           '-map', '0:v:0', '-vf', vf, '-q:v', '3', '-start_number', '1', str(frames_dir / '%06d.jpg')]
+           '-map', '0:v:0', '-vf', vf, '-q:v', '5', '-start_number', '1', str(frames_dir / '%06d.jpg')]
     if info['hasAudio']:
         cmd += ['-map', '0:a:0', '-vn', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', str(d / 'audio.m4a')]
     cmd[3:3] = ['-progress', 'pipe:1', '-nostats']
@@ -449,6 +451,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if m.group(2):
                     return self.send_zip(meta)
                 return self.send_json(200, dict(meta, ok=True))
+            m = re.match(r'^/media/([a-f0-9]{12})/chunk$', path)
+            if m:
+                return self.send_chunk(m.group(1), q)
             m = re.match(r'^/media/([a-f0-9]{12})/(frames/\d{6}\.jpg|audio\.m4a|thumb\.jpg)$', path)
             if m:
                 return self.send_media(vdir(m.group(1)) / m.group(2))
@@ -456,6 +461,36 @@ class Handler(SimpleHTTPRequestHandler):
         if path.startswith('/server/') or '/.' in path:
             return self.send_json(404, {'error': 'not found'})
         return super().do_GET()
+
+    def send_chunk(self, vid, q):
+        """Many frames in one response, so a slow or far connection is not
+        held up by one round trip per frame. ?from=<first index, 0-based>&n=<count>.
+        Body: count (uint32 BE), then each frame's length (uint32 BE), then
+        the JPEGs one after another."""
+        try:
+            first = max(0, int((q.get('from') or ['0'])[0]))
+            n = max(1, min(240, int((q.get('n') or ['30'])[0])))
+        except ValueError:
+            return self.send_json(400, {'ok': False, 'error': 'from/n'})
+        d = vdir(vid) / 'frames'
+        parts = []
+        for i in range(first, first + n):
+            try:
+                parts.append((d / ('%06d.jpg' % (i + 1))).read_bytes())
+            except OSError:
+                break
+        if not parts:
+            return self.send_json(404, {'ok': False, 'error': 'not found'})
+        head = struct.pack('>I', len(parts)) + b''.join(struct.pack('>I', len(p)) for p in parts)
+        size = len(head) + sum(len(p) for p in parts)
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/octet-stream')
+        self.send_header('Content-Length', str(size))
+        self.send_header('Cache-Control', 'private, max-age=31536000, immutable')
+        self.end_headers()
+        self.wfile.write(head)
+        for p in parts:
+            self.wfile.write(p)
 
     def send_media(self, f):
         try:

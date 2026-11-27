@@ -255,14 +255,21 @@
       const px = this.canvas.width * this.canvas.height * 4;
       // Decoded bitmaps are big: at most about 120 MB of them (1.5 s at most).
       this.bmpAhead = Math.max(2, Math.min(Math.ceil(this.fps * 1.5), Math.floor(120e6 / px)));
-      this.blobAhead = Math.max(this.bmpAhead, Math.ceil(this.fps * 6));
+      // Compressed frames are small: keep ~20 s of them ready, fetched in
+      // one-second chunks (one request each, not one per frame).
+      this.blobAhead = Math.max(this.bmpAhead, Math.ceil(this.fps * 20));
+      this.chunk = Math.max(8, Math.round(this.fps));
+      this.chunkLoading = new Set();
+      this.useChunks = true;
       this.wall = { base: 0, at: performance.now() };
       this.drawn = -1;
       this.dropped = 0;
       $('timeline').max = String(Math.max(0, this.count - 1));
       $('durTime').textContent = fmtTime(this.duration);
       $('nowTitle').textContent = meta.title || '';
-      $('nowInfo').textContent = `${fmtFps(meta.fps)} · ${meta.frames} 帧 · ${meta.width}×${meta.height}` + (meta.hasAudio ? ' · 有声音' : ' · 无声音');
+      const mbps = meta.bytes && meta.duration ? meta.bytes * 8 / meta.duration / 1e6 : 0;
+      $('nowInfo').textContent = `${fmtFps(meta.fps)} · ${meta.frames} 帧 · ${meta.width}×${meta.height}` + (meta.hasAudio ? ' · 有声音' : ' · 无声音')
+        + (mbps ? ` · 播放约需 ${mbps.toFixed(mbps < 10 ? 1 : 0)} Mbps` : '');
       $('playerCard').hidden = false;
       this.seekFrame(0);
     }
@@ -329,11 +336,42 @@
         .catch(() => {})
         .finally(() => { e.decoding = false; });
     }
+    fetchChunk(c) {
+      const gen = this.gen, from = c * this.chunk, n = Math.min(this.chunk, this.count - from);
+      this.chunkLoading.add(c);
+      this.inflight++;
+      fetch(media(this.meta.id, 'chunk') + `&from=${from}&n=${n}`)
+        .then(r => { if (r.status === 404) this.useChunks = false; if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then(buf => {
+          if (gen !== this.gen) return;
+          const v = new DataView(buf), k = v.getUint32(0);
+          let off = 4 + 4 * k;
+          for (let j = 0; j < k; j++) {
+            const len = v.getUint32(4 + 4 * j);
+            const e = this.entry(from + j);
+            if (!e.blob) e.blob = new Blob([new Uint8Array(buf, off, len)], { type: 'image/jpeg' });
+            off += len;
+          }
+        })
+        .catch(() => {})
+        .finally(() => { if (gen === this.gen) { this.chunkLoading.delete(c); this.inflight--; } });
+    }
     schedule(cur) {
       const last = Math.min(this.count - 1, cur + this.blobAhead);
-      for (let i = cur; i <= last && this.inflight < 8; i++) {
-        const e = this.cache.get(i);
-        if (!e || (!e.blob && !e.loading)) this.fetchBlob(i);
+      if (this.useChunks) {
+        // Nearest chunks first, at most 3 requests at a time.
+        for (let c = Math.floor(cur / this.chunk); c * this.chunk <= last && this.inflight < 3; c++) {
+          if (this.chunkLoading.has(c)) continue;
+          const from = c * this.chunk, to = Math.min(this.count, from + this.chunk);
+          let missing = false;
+          for (let i = Math.max(from, cur); i < to; i++) { const e = this.cache.get(i); if (!e || !e.blob) { missing = true; break; } }
+          if (missing) this.fetchChunk(c);
+        }
+      } else {
+        for (let i = cur; i <= last && this.inflight < 8; i++) {
+          const e = this.cache.get(i);
+          if (!e || (!e.blob && !e.loading)) this.fetchBlob(i);
+        }
       }
       const lastBmp = Math.min(this.count - 1, cur + this.bmpAhead);
       for (let i = cur; i <= lastBmp; i++) this.decode(i);
@@ -348,12 +386,22 @@
         }
       }
     }
+    // Compressed frames ready for the next `seconds` (or to the end).
+    bufferedFrom(i, seconds) {
+      const end = Math.min(this.count, i + Math.ceil(seconds * this.fps));
+      for (let k = i; k < end; k++) { const e = this.cache.get(k); if (!e || !e.blob) return false; }
+      return true;
+    }
     readyFrom(i, n) {
       for (let k = i; k < Math.min(this.count, i + n); k++) {
         const e = this.cache.get(k);
         if (!e || !e.bitmap) return false;
       }
       return true;
+    }
+
+    canStart(i, seconds) {
+      return this.bufferedFrom(i, seconds) && this.readyFrom(i, Math.min(this.bmpAhead, Math.max(2, Math.ceil(this.fps / 3))));
     }
 
     // --- playback
@@ -364,7 +412,7 @@
       this.updateButton();
       if (this.hasAudio) audioCtx();   // unlock Web Audio while we have the tap
       const i = this.frameAt(this.now());
-      if (this.readyFrom(i, Math.min(this.bmpAhead, Math.max(2, Math.ceil(this.fps / 3))))) { this.stalled = true; this.resume(); return; }
+      if (this.canStart(i, 2)) { this.stalled = true; this.resume(); return; }
       this.stalled = true;   // start once a little is buffered
       $('bufferBadge').hidden = false;
       if (this.hasAudio && !(this.audio instanceof WebAudioOut)) {
@@ -442,9 +490,10 @@
       const i = this.frameAt(this.now());
       this.schedule(i);
       if (this.playing) {
-        const need = Math.min(this.bmpAhead, Math.max(2, Math.ceil(this.fps / 3)));
         if (this.stalled) {
-          if (this.readyFrom(i, need)) this.resume();
+          // After running dry, wait for a few seconds of frames, so it does
+          // not stop again a moment later.
+          if (this.canStart(i, this.dropped ? 4 : 2)) this.resume();
         } else if (!this.readyFrom(i, 1)) {
           this.dropped++;
           this.stall();
