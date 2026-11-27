@@ -58,8 +58,8 @@
   let keyTried = false;
   function showKeyCard() {
     $('keyCard').hidden = false;
-    setServer('bad', keyTried ? '密钥不对' : '需要密钥');
-    if (keyTried) keyHint('密钥不对，请用 8 位数字密码再试一次。');
+    setServer('bad', keyTried ? 'Wrong key' : 'Key needed');
+    if (keyTried) keyHint('That key did not work. Try the 8-digit PIN.');
   }
   $('keyForm').addEventListener('submit', async e => {
     e.preventDefault();
@@ -71,9 +71,9 @@
       try {
         const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: digits }) });
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) { keyHint(res.status === 429 ? body.error : '密码不对，请再看一下 Mac mini 上的 8 位数字。'); return; }
+        if (!res.ok) { keyHint(res.status === 429 ? body.error : 'Wrong PIN. Check the 8 digits on the Mac mini.'); return; }
         key = body.key;
-      } catch { keyHint('连不上 Mac mini。'); return; }
+      } catch { keyHint('Cannot reach the Mac mini.'); return; }
     } else key = cleanKey(raw);
     if (!saveKey(key)) history.replaceState(null, '', location.pathname + location.search + '#key=' + encodeURIComponent(key));
     keyTried = true;
@@ -237,7 +237,7 @@
       this.audio.pause();
       this.silent = true;
       this.wall = { base: t, at: performance.now() };
-      note('这个浏览器不让网页播放声音，先静音播放画面。', true);
+      note('This browser does not allow sound here; playing without sound.', true);
     }
 
     open(meta) {
@@ -268,8 +268,8 @@
       $('durTime').textContent = fmtTime(this.duration);
       $('nowTitle').textContent = meta.title || '';
       const mbps = meta.bytes && meta.duration ? meta.bytes * 8 / meta.duration / 1e6 : 0;
-      $('nowInfo').textContent = `${fmtFps(meta.fps)} · ${meta.frames} 帧 · ${meta.width}×${meta.height}` + (meta.hasAudio ? ' · 有声音' : ' · 无声音')
-        + (mbps ? ` · 播放约需 ${mbps.toFixed(mbps < 10 ? 1 : 0)} Mbps` : '');
+      $('nowInfo').textContent = `${fmtFps(meta.fps)} · ${meta.frames} frames · ${meta.width}×${meta.height}` + (meta.hasAudio ? ' · sound' : ' · no sound')
+        + (mbps ? ` · needs about ${mbps.toFixed(mbps < 10 ? 1 : 0)} Mbps` : '');
       $('playerCard').hidden = false;
       this.seekFrame(0);
     }
@@ -514,7 +514,7 @@
     }
     updateButton() {
       $('playBtn').innerHTML = this.playing ? ICONS.pause : ICONS.play;
-      $('playBtn').setAttribute('aria-label', this.playing ? '暂停' : '播放');
+      $('playBtn').setAttribute('aria-label', this.playing ? 'Pause' : 'Play');
     }
   }
 
@@ -543,7 +543,7 @@
     card.classList.toggle('is-fs', on);
     document.body.classList.toggle('fs-lock', on);
     $('fsBtn').innerHTML = on ? ICONS.fsExit : ICONS.fs;
-    $('fsBtn').setAttribute('aria-label', on ? '退出全屏' : '全屏');
+    $('fsBtn').setAttribute('aria-label', on ? 'Exit fullscreen' : 'Fullscreen');
   }
   function setFake(on) {
     fakeFs = on;
@@ -584,11 +584,11 @@
     try {
       const res = await api('/api/videos');
       videos = res.videos;
-      setServer('ok', 'Mac mini 已连接');
+      setServer('ok', 'Mac mini connected');
       $('keyCard').hidden = true;
       render();
     } catch (e) {
-      if (e.message !== 'key') setServer('bad', '连不上 Mac mini');
+      if (e.message !== 'key') setServer('bad', 'Cannot reach the Mac mini');
     }
     clearTimeout(pollTimer);
     const busy = videos.some(v => ['queued', 'downloading', 'processing', 'uploading'].includes(v.status));
@@ -597,22 +597,23 @@
 
   function statusLine(v) {
     if (v.status === 'ready') {
-      return `${fmtTime(v.duration, false)} · ${fmtFps(v.fps)} · ${v.frames} 帧 · ${v.height}p · ${fmtBytes(v.bytes)}`;
+      return `${fmtTime(v.duration, false)} · ${fmtFps(v.fps)} · ${v.frames} frames · ${v.height}p · ${fmtBytes(v.bytes)}`;
     }
-    if (v.status === 'error') return v.error || '失败';
+    if (v.status === 'error') return v.error === '已取消' ? 'Cancelled' : (v.error || 'Failed');
     const pct = v.progress ? ` ${Math.round(v.progress)}%` : '';
-    return (v.stage || v.status) + pct;
+    const label = { queued: 'Waiting', uploading: 'Uploading', downloading: 'Downloading', processing: 'Splitting frames' }[v.status] || v.status;
+    return label + pct;
   }
 
   function render() {
     const total = videos.reduce((a, v) => a + (v.bytes || 0), 0);
-    $('libInfo').textContent = videos.length ? `${videos.length} 部 · ${fmtBytes(total)}` : '';
+    $('libInfo').textContent = videos.length ? `${videos.length} video${videos.length === 1 ? '' : 's'} · ${fmtBytes(total)}` : '';
     $('libEmpty').hidden = videos.length > 0;
     $('grid').innerHTML = videos.map(v => {
       const ready = v.status === 'ready', busy = !ready && v.status !== 'error';
       const thumb = ready
         ? `<div class="thumb" data-play="${v.id}" style="background-image:url('${media(v.id, 'thumb.jpg')}')"><span class="dur">${fmtTime(v.duration, false)}</span></div>`
-        : `<div class="thumb pending">${busy ? '处理中…' : '处理失败'}</div>`;
+        : `<div class="thumb pending">${busy ? 'Processing…' : 'Failed'}</div>`;
       return `<article class="item${player.meta && player.meta.id === v.id ? ' active' : ''}">
         ${thumb}
         <div class="item-body">
@@ -620,10 +621,10 @@
           ${busy ? `<div class="bar"><i style="width:${v.progress || 2}%"></i></div>` : ''}
           <div class="item-meta${v.status === 'error' ? ' error' : ''}">${esc(statusLine(v))}</div>
           <div class="item-actions">
-            ${ready ? `<button class="ghost" data-play="${v.id}">播放</button><a class="ghost" href="/api/videos/${v.id}/zip?k=${encodeURIComponent(key)}">下载 ZIP</a>` : ''}
-            ${busy ? `<button class="ghost" data-cancel="${v.id}">取消</button>` : ''}
-            ${v.status === 'error' && v.source.startsWith('http') ? `<button class="ghost" data-retry="${v.id}">重试</button>` : ''}
-            <button class="ghost danger${armed.has(v.id) ? ' confirm' : ''}" data-del="${v.id}">${armed.has(v.id) ? '确定删除？' : '删除'}</button>
+            ${ready ? `<button class="ghost" data-play="${v.id}">Play</button><a class="ghost" href="/api/videos/${v.id}/zip?k=${encodeURIComponent(key)}">Download ZIP</a>` : ''}
+            ${busy ? `<button class="ghost" data-cancel="${v.id}">Cancel</button>` : ''}
+            ${v.status === 'error' && v.source.startsWith('http') ? `<button class="ghost" data-retry="${v.id}">Retry</button>` : ''}
+            <button class="ghost danger${armed.has(v.id) ? ' confirm' : ''}" data-del="${v.id}">${armed.has(v.id) ? 'Delete?' : 'Delete'}</button>
           </div>
         </div>
       </article>`;
@@ -645,7 +646,7 @@
       }
       armed.delete(id);
       if (player.meta && player.meta.id === id) { player.close(); $('playerCard').hidden = true; }
-      try { await api(`/api/videos/${id}`, { method: 'DELETE' }); } catch (err) { note('删除失败：' + err.message, true); }
+      try { await api(`/api/videos/${id}`, { method: 'DELETE' }); } catch (err) { note('Delete failed: ' + err.message, true); }
       refresh();
     } else if (t.dataset.cancel) {
       try { await api(`/api/videos/${t.dataset.cancel}/cancel`, { method: 'POST' }); } catch {}
@@ -661,11 +662,11 @@
     $('startBtn').disabled = true;
     try {
       await api('/api/videos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, fps, height }) });
-      note('已经交给 Mac mini 处理，下面可以看到进度。');
+      note('Sent to the Mac mini. Progress shows below.');
       refresh();
       return true;
     } catch (e) {
-      if (e.message !== 'key') note('没能开始：' + e.message, true);
+      if (e.message !== 'key') note('Could not start: ' + e.message, true);
       return false;
     } finally { $('startBtn').disabled = false; }
   }
@@ -684,15 +685,15 @@
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload?' + q);
     xhr.setRequestHeader('X-Frame-Key', key);
-    xhr.upload.onprogress = ev => { if (ev.lengthComputable) note(`上传中 ${Math.round(ev.loaded / ev.total * 100)}%（${fmtBytes(ev.loaded)} / ${fmtBytes(ev.total)}）`); };
+    xhr.upload.onprogress = ev => { if (ev.lengthComputable) note(`Uploading ${Math.round(ev.loaded / ev.total * 100)}% (${fmtBytes(ev.loaded)} / ${fmtBytes(ev.total)})`); };
     xhr.onload = () => {
       if (xhr.status === 401) { showKeyCard(); return; }
-      if (xhr.status >= 200 && xhr.status < 300) { note('上传完成，Mac mini 开始处理。'); refresh(); }
-      else { let msg = `HTTP ${xhr.status}`; try { msg = JSON.parse(xhr.responseText).error || msg; } catch {} note('上传失败：' + msg, true); }
+      if (xhr.status >= 200 && xhr.status < 300) { note('Uploaded. The Mac mini is processing it.'); refresh(); }
+      else { let msg = `HTTP ${xhr.status}`; try { msg = JSON.parse(xhr.responseText).error || msg; } catch {} note('Upload failed: ' + msg, true); }
     };
-    xhr.onerror = () => note('上传失败：连不上 Mac mini', true);
+    xhr.onerror = () => note('Upload failed: cannot reach the Mac mini', true);
     xhr.send(f);
-    note('上传中 0%');
+    note('Uploading 0%');
   });
 
   $('prevBtn').innerHTML = ICONS.prev; $('nextBtn').innerHTML = ICONS.next; $('playBtn').innerHTML = ICONS.play;

@@ -135,7 +135,7 @@ def new_video(**fields):
     vid = secrets.token_hex(6)
     vdir(vid).mkdir(parents=True)
     meta = {
-        'id': vid, 'title': '', 'source': '', 'status': 'queued', 'stage': '等待处理',
+        'id': vid, 'title': '', 'source': '', 'status': 'queued', 'stage': 'Waiting',
         'progress': 0, 'error': '', 'created': time.time(),
         'fps': 0, 'frames': 0, 'width': 0, 'height': 0, 'duration': 0,
         'hasAudio': False, 'audioOffset': 0, 'bytes': 0,
@@ -195,7 +195,7 @@ class Jobs:
             except Cancelled:
                 pass
             except Exception as e:  # noqa: BLE001  keep the worker alive
-                update_meta(vid, status='error', stage='失败', error=str(e)[:500])
+                update_meta(vid, status='error', stage='Failed', error=str(e)[:500])
             finally:
                 with self.cond:
                     self.current = None
@@ -227,13 +227,13 @@ def probe(path):
     out = subprocess.run([FFPROBE, '-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', str(path)],
                          capture_output=True, text=True, timeout=120)
     if out.returncode != 0:
-        raise RuntimeError('无法读取这个视频文件：' + out.stdout[-200:] + out.stderr[-300:])
+        raise RuntimeError('Cannot read this video file: ' + out.stdout[-200:] + out.stderr[-300:])
     info = json.loads(out.stdout)
     video = next((s for s in info.get('streams', []) if s.get('codec_type') == 'video'
                   and not (s.get('disposition') or {}).get('attached_pic')), None)
     audio = next((s for s in info.get('streams', []) if s.get('codec_type') == 'audio'), None)
     if not video:
-        raise RuntimeError('这个文件里没有视频画面')
+        raise RuntimeError('This file has no video picture')
 
     def rate(s):
         try:
@@ -262,7 +262,7 @@ def download(vid, url, jobs):
     meta = read_meta(vid)
     h = meta.get('requestHeight') or 0
     fmt = ('bv*[height<=%d]+ba/b[height<=%d]/bv*+ba/b' % (h, h)) if h else 'bv*+ba/b'
-    update_meta(vid, status='downloading', stage='下载中', progress=0)
+    update_meta(vid, status='downloading', stage='Downloading', progress=0)
     pct = re.compile(r'\[download\]\s+([\d.]+)%')
     last = [0.0]
 
@@ -284,7 +284,7 @@ def download(vid, url, jobs):
         pass
     files = [f for f in d.glob('source.*') if f.suffix not in ('.json', '.part', '.ytdl')]
     if not files:
-        raise RuntimeError('下载完成但找不到视频文件')
+        raise RuntimeError('Download finished but the video file is missing')
     return max(files, key=lambda f: f.stat().st_size)
 
 
@@ -305,7 +305,7 @@ def extract(vid, src, jobs):
     vf = 'fps=%s' % fps
     if out_h and out_h != info['height']:
         vf += ',scale=-2:%d:flags=lanczos' % out_h
-    update_meta(vid, status='processing', stage='拆帧中', progress=0, duration=info['duration'],
+    update_meta(vid, status='processing', stage='Splitting frames', progress=0, duration=info['duration'],
                 hasAudio=info['hasAudio'])
     cmd = [FFMPEG, '-hide_banner', '-nostdin', '-y', '-i', str(src),
            '-map', '0:v:0', '-vf', vf, '-q:v', '5', '-start_number', '1', str(frames_dir / '%06d.jpg')]
@@ -327,7 +327,7 @@ def extract(vid, src, jobs):
     jobs.run(vid, cmd, on_line)
     count = len([f for f in frames_dir.iterdir() if FRAME_RE.match(f.name)])
     if not count:
-        raise RuntimeError('没有拆出任何画面')
+        raise RuntimeError('No frames came out')
     # Thumbnail: a frame from about 10% in.
     shutil.copyfile(frames_dir / ('%06d.jpg' % max(1, count // 10)), d / 'thumb.jpg')
     try:
@@ -356,10 +356,10 @@ def process(vid, jobs):
     else:
         src = next((f for f in d.glob('source.*') if f.suffix != '.json'), None)
         if not src:
-            raise RuntimeError('找不到上传的视频文件')
+            raise RuntimeError('The uploaded video file is missing')
     t0 = time.time()
     result = extract(vid, src, jobs)
-    update_meta(vid, status='ready', stage='完成', progress=100, error='',
+    update_meta(vid, status='ready', stage='Done', progress=100, error='',
                 seconds=round(time.time() - t0, 1), bytes=dir_size(d), **result)
 
 
@@ -370,13 +370,13 @@ def recover():
     """After a restart, unfinished jobs start again (uploads) or are marked failed."""
     for m in sorted(list_videos(), key=lambda m: m.get('created', 0)):
         if m['status'] == 'uploading':
-            update_meta(m['id'], status='error', stage='失败', error='上传时服务器重启了，请重新上传')
+            update_meta(m['id'], status='error', stage='Failed', error='The server restarted during the upload; please upload again')
         elif m['status'] in ('queued', 'downloading', 'processing'):
             if m.get('source', '').startswith('http') or any(vdir(m['id']).glob('source.*')):
-                update_meta(m['id'], status='queued', stage='等待处理', progress=0)
+                update_meta(m['id'], status='queued', stage='Waiting', progress=0)
                 JOBS.add(m['id'])
             else:
-                update_meta(m['id'], status='error', stage='失败', error='服务器重启时中断了')
+                update_meta(m['id'], status='error', stage='Failed', error='Interrupted by a server restart')
 
 
 # ---------------------------------------------------------------- HTTP
@@ -535,7 +535,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def send_zip(self, meta):
         if meta.get('status') != 'ready':
-            return self.send_json(409, {'ok': False, 'error': '还没处理完'})
+            return self.send_json(409, {'ok': False, 'error': 'Not finished yet'})
         d = vdir(meta['id'])
         name = re.sub(r'[\\/:*?"<>|\s]+', '_', meta.get('title') or meta['id'])[:80] or meta['id']
         self.send_response(200)
@@ -595,7 +595,7 @@ class Handler(SimpleHTTPRequestHandler):
         with Handler.fail_lock:
             Handler.fails[:] = [t for t in Handler.fails if now - t < 900]
             if len(Handler.fails) >= 10:
-                return self.send_json(429, {'ok': False, 'error': '错误次数太多，请 15 分钟后再试'})
+                return self.send_json(429, {'ok': False, 'error': 'Too many wrong PINs; try again in 15 minutes'})
             pin = re.sub(r'\D', '', str(body.get('pin') or ''))
             if self.pin and secrets.compare_digest(pin, self.pin):
                 return self.send_json(200, {'ok': True, 'key': self.key})
@@ -615,7 +615,7 @@ class Handler(SimpleHTTPRequestHandler):
             body = self.read_json()
             url = str(body.get('url') or '').strip()
             if not valid_url(url):
-                return self.send_json(400, {'ok': False, 'error': '请输入有效的 http(s) 链接'})
+                return self.send_json(400, {'ok': False, 'error': 'Please enter a valid http(s) link'})
             meta = new_video(title=url, source=url,
                              requestFps=clean_choice(body.get('fps'), FPS_CHOICES, 0),
                              requestHeight=clean_choice(body.get('height'), HEIGHT_CHOICES, 720))
@@ -624,15 +624,15 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/upload':
             n = int(self.headers.get('Content-Length') or 0)
             if n <= 0 or n > MAX_UPLOAD:
-                return self.send_json(413, {'ok': False, 'error': '文件为空或超过 4 GB'})
+                return self.send_json(413, {'ok': False, 'error': 'The file is empty or over 4 GB'})
             name = unquote((q.get('name') or ['video'])[0])[:200]
             ext = (Path(name).suffix.lower() or '.mp4')[:6]
             if not re.match(r'^\.[a-z0-9]{1,5}$', ext):
                 ext = '.mp4'
-            meta = new_video(title=Path(name).stem or '上传的视频', source='upload:' + name,
+            meta = new_video(title=Path(name).stem or 'Uploaded video', source='upload:' + name,
                              requestFps=clean_choice((q.get('fps') or [0])[0], FPS_CHOICES, 0),
                              requestHeight=clean_choice((q.get('height') or [720])[0], HEIGHT_CHOICES, 720),
-                             status='uploading', stage='上传中')
+                             status='uploading', stage='Uploading')
             dest = vdir(meta['id']) / ('source' + ext)
             left = n
             try:
@@ -647,7 +647,7 @@ class Handler(SimpleHTTPRequestHandler):
                 shutil.rmtree(vdir(meta['id']), ignore_errors=True)
                 self.close_connection = True
                 return
-            meta = update_meta(meta['id'], status='queued', stage='等待处理')
+            meta = update_meta(meta['id'], status='queued', stage='Waiting')
             JOBS.add(meta['id'])
             return self.send_json(200, dict(meta, ok=True))
         m = re.match(r'^/api/videos/([a-f0-9]{12})/cancel$', path)
@@ -658,7 +658,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(404, {'ok': False, 'error': 'not found'})
             if meta['status'] in ('queued', 'downloading', 'processing'):
                 JOBS.cancel(vid)
-                meta = update_meta(vid, status='error', stage='已取消', error='已取消')
+                meta = update_meta(vid, status='error', stage='Cancelled', error='Cancelled')
             return self.send_json(200, dict(meta, ok=True))
         return self.send_json(404, {'ok': False, 'error': 'not found'})
 
