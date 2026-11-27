@@ -10,9 +10,9 @@ splits it with ffmpeg and keeps it in a library you can play or delete.
 - `server/server.py` (Python, standard library only) runs on the Mac mini and
   serves the player. For each video it runs **yt-dlp** (links) and then one
   **ffmpeg** pass that writes `frames/000001.jpg …` at the chosen frame rate
-  and size, plus `audio.m4a`, then a small copy in `lite/` (360p, stronger
-  JPEG compression, about a fifth of the size). Videos made before the small
-  copy existed get one in the background when the server starts. Jobs run one at a time; progress is shown in the
+  and size, plus `audio.m4a`, then smaller copies: `lite/` (360p, about a
+  fifth of the size) and, for 720p and up, `mid/` (540p). Videos made before
+  the copies existed get them in the background when the server starts. Jobs run one at a time; progress is shown in the
   library. Everything lives in `~/.framestudio/videos/<id>/`; the downloaded
   source is deleted once the frames are made.
 - The player (`index.html`, `app.js`) draws the JPEGs to a canvas. The audio
@@ -23,9 +23,11 @@ splits it with ffmpeg and keeps it in a library you can play or delete.
   decoded; if the network falls behind, sound and picture pause together
   ("Buffering…") instead of drifting apart.
 - A JPEG sequence needs several times the bandwidth of a normal video (720p30
-  is roughly 10–15 Mbps). The player measures the connection and uses the
-  small copy ("Low bandwidth" on the picture) until it is fast enough for the
-  full frames; it switches back and forth as the speed changes.
+  is roughly 10–15 Mbps). The player measures the connection; the next ~6 s
+  are fetched at a quality it surely carries, and the spare bandwidth fetches
+  frames further ahead (up to a minute) again at the best quality that can
+  arrive in time. Playback stays smooth and gets sharper as the buffer grows,
+  or while paused.
 - Controls: play/pause (space), previous/next frame (← →, Shift for 5 s),
   timeline, speed 0.25–2×, volume/mute (M), fullscreen (F).
 
@@ -57,8 +59,8 @@ yt-dlp is replaced by a stand-in).
 | `POST /api/upload?name=&fps=&height=` | body = video file |
 | `POST /api/videos/<id>/cancel` | stop a job |
 | `DELETE /api/videos/<id>` | delete video and frames |
-| `GET /media/<id>/chunk?from=&n=[&v=lite]` | many frames in one reply |
-| `GET /media/<id>/frames/000001.jpg`, `lite/000001.jpg`, `audio.m4a`, `thumb.jpg` | files |
+| `GET /media/<id>/chunk?from=&n=[&v=lite|mid]` | many frames in one reply |
+| `GET /media/<id>/frames/000001.jpg`, `lite/…`, `mid/…`, `audio.m4a`, `thumb.jpg` | files |
 
 ## Older version
 

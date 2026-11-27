@@ -12,8 +12,8 @@ POST   /api/upload?name=&fps=&height=   body = the video file: process it
 POST   /api/videos/<id>/cancel    stop a queued or running job
 POST   /api/videos/<id>/position  {"t": seconds}: where playback stopped
 DELETE /api/videos/<id>           delete the video and all its frames
-GET    /media/<id>/chunk?from=0&n=30[&v=lite]  many frames in one response (see send_chunk)
-GET    /media/<id>/frames/000001.jpg, /media/<id>/lite/000001.jpg, /media/<id>/audio.m4a, /media/<id>/thumb.jpg
+GET    /media/<id>/chunk?from=0&n=30[&v=lite|mid]  many frames in one response (see send_chunk)
+GET    /media/<id>/frames/000001.jpg, /media/<id>/{lite,mid}/000001.jpg, /media/<id>/audio.m4a, /media/<id>/thumb.jpg
 
 Every /api and /media request needs the key, in the X-Frame-Key header or as
 ?k=<key>. The key is made on first start and kept in ~/.framestudio/key; open
@@ -195,14 +195,14 @@ class Jobs:
                 self.current = vid
             try:
                 if lite_only:
-                    make_lite(vid, self)
+                    make_copies(vid, self)
                 else:
                     process(vid, self)
             except Cancelled:
                 pass
             except Exception as e:  # noqa: BLE001  keep the worker alive
                 if lite_only:   # the video itself is still fine
-                    print('Low-bandwidth copy of %s failed: %s' % (vid, e), flush=True)
+                    print('Smaller copies of %s failed: %s' % (vid, e), flush=True)
                 else:
                     update_meta(vid, status='error', stage='Failed', error=str(e)[:500])
             finally:
@@ -355,33 +355,48 @@ def extract(vid, src, jobs):
     }
 
 
-LITE_HEIGHT = 360
-LITE_Q = '9'
+# Smaller copies of the frames for slower connections: (folder, height, JPEG q).
+# The player starts with what the connection can carry and replaces frames
+# further ahead with better ones as time allows.
+COPIES = (('lite', 360, '9'), ('mid', 540, '8'))
 
 
-def make_lite(vid, jobs):
-    """A small copy of the frames (360p, stronger JPEG compression, about a
-    fifth of the size) that the player switches to when the connection is
-    too slow for the full frames."""
+def wanted_copies(meta):
+    """lite always; mid only when the full frames are clearly bigger than it."""
+    h = meta.get('height') or 0
+    return [c for c in COPIES if c[0] == 'lite' or h >= c[1] + 120]
+
+
+def missing_copies(meta):
+    have = meta.get('copies') or {}
+    return [c for c in wanted_copies(meta) if c[0] not in have]
+
+
+def make_copies(vid, jobs):
     meta = read_meta(vid)
     if not meta or not meta.get('frames'):
         return
     d = vdir(vid)
-    lite = d / 'lite'
-    if lite.exists():
-        shutil.rmtree(lite)
-    lite.mkdir()
-    h = min(LITE_HEIGHT, meta.get('height') or LITE_HEIGHT)
-    h -= h % 2
-    cmd = [FFMPEG, '-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-start_number', '1',
-           '-i', str(d / 'frames' / '%06d.jpg'), '-vf', 'scale=-2:%d:flags=bicubic' % h,
-           '-q:v', LITE_Q, '-start_number', '1', str(lite / '%06d.jpg')]
-    jobs.run(vid, cmd)
-    n = len([f for f in lite.iterdir() if FRAME_RE.match(f.name)])
-    if n != meta['frames']:
-        shutil.rmtree(lite, ignore_errors=True)
-        raise RuntimeError('Low-bandwidth copy has %d of %d frames' % (n, meta['frames']))
-    update_meta(vid, lite=True, liteBytes=dir_size(lite), frameBytes=dir_size(d / 'frames'), bytes=dir_size(d))
+    for name, height, q in missing_copies(meta):
+        out = d / name
+        if out.exists():
+            shutil.rmtree(out)
+        out.mkdir()
+        h = min(height, meta.get('height') or height)
+        h -= h % 2
+        cmd = [FFMPEG, '-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-start_number', '1',
+               '-i', str(d / 'frames' / '%06d.jpg'), '-vf', 'scale=-2:%d:flags=bicubic' % h,
+               '-q:v', q, '-start_number', '1', str(out / '%06d.jpg')]
+        jobs.run(vid, cmd)
+        n = len([f for f in out.iterdir() if FRAME_RE.match(f.name)])
+        if n != meta['frames']:
+            shutil.rmtree(out, ignore_errors=True)
+            raise RuntimeError('The %s copy has %d of %d frames' % (name, n, meta['frames']))
+        m = read_meta(vid)
+        if not m:
+            return
+        copies = dict(m.get('copies') or {}, **{name: dir_size(out)})
+        update_meta(vid, copies=copies, lite='lite' in copies, frameBytes=dir_size(d / 'frames'), bytes=dir_size(d))
 
 
 def process(vid, jobs):
@@ -397,8 +412,8 @@ def process(vid, jobs):
             raise RuntimeError('The uploaded video file is missing')
     t0 = time.time()
     result = extract(vid, src, jobs)
-    update_meta(vid, stage='Making low-bandwidth copy', progress=99, **result)
-    make_lite(vid, jobs)
+    update_meta(vid, stage='Making smaller copies', progress=99, **result)
+    make_copies(vid, jobs)
     update_meta(vid, status='ready', stage='Done', progress=100, error='',
                 seconds=round(time.time() - t0, 1), bytes=dir_size(d), frameBytes=dir_size(d / 'frames'))
 
@@ -417,9 +432,9 @@ def recover():
                 JOBS.add(m['id'])
             else:
                 update_meta(m['id'], status='error', stage='Failed', error='Interrupted by a server restart')
-    # Videos made before the low-bandwidth copy existed get one, in the background.
+    # Videos made before the smaller copies existed get them, in the background.
     for m in list_videos():
-        if m['status'] == 'ready' and not m.get('lite'):
+        if m['status'] == 'ready' and missing_copies(m):
             JOBS.add(m['id'], lite_only=True)
 
 
@@ -496,7 +511,7 @@ class Handler(SimpleHTTPRequestHandler):
             m = re.match(r'^/media/([a-f0-9]{12})/chunk$', path)
             if m:
                 return self.send_chunk(m.group(1), q)
-            m = re.match(r'^/media/([a-f0-9]{12})/((?:frames|lite)/\d{6}\.jpg|audio\.m4a|thumb\.jpg)$', path)
+            m = re.match(r'^/media/([a-f0-9]{12})/((?:frames|lite|mid)/\d{6}\.jpg|audio\.m4a|thumb\.jpg)$', path)
             if m:
                 return self.send_media(vdir(m.group(1)) / m.group(2))
             return self.send_json(404, {'ok': False, 'error': 'not found'})
@@ -508,13 +523,14 @@ class Handler(SimpleHTTPRequestHandler):
         """Many frames in one response, so a slow or far connection is not
         held up by one round trip per frame. ?from=<first index, 0-based>&n=<count>.
         Body: count (uint32 BE), then each frame's length (uint32 BE), then
-        the JPEGs one after another. &v=lite takes them from the small copy."""
+        the JPEGs one after another. &v=lite or &v=mid takes them from a smaller copy."""
         try:
             first = max(0, int((q.get('from') or ['0'])[0]))
             n = max(1, min(240, int((q.get('n') or ['30'])[0])))
         except ValueError:
             return self.send_json(400, {'ok': False, 'error': 'from/n'})
-        d = vdir(vid) / ('lite' if (q.get('v') or [''])[0] == 'lite' else 'frames')
+        v = (q.get('v') or [''])[0]
+        d = vdir(vid) / (v if v in [c[0] for c in COPIES] else 'frames')
         parts = []
         for i in range(first, first + n):
             try:

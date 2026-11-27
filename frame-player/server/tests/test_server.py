@@ -105,7 +105,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(chunk[4 + 4 * k:4 + 4 * k + 2], b'\xff\xd8')
         self.assertEqual(len(chunk), 4 + 4 * k + sum(struct.unpack('>%dI' % k, chunk[4:4 + 4 * k])))
         self.assertGreater(first, 0)
-        self.assertTrue(m['lite'])
+        self.assertEqual(set(m['copies']), {'lite'})   # 360p: no mid copy
         code, chunk = self.req('/media/%s/chunk?from=0&n=4&v=lite' % m['id'], raw=True)
         self.assertEqual(struct.unpack('>I', chunk[:4])[0], 4)
         code, jpg = self.req('/media/%s/lite/000001.jpg' % m['id'], raw=True)
@@ -122,6 +122,9 @@ class ServerTest(unittest.TestCase):
         m = self.wait(m['id'])
         self.assertEqual(m['status'], 'ready', m.get('error'))
         self.assertEqual((m['fps'], m['frames'], m['width'], m['height']), (30, 60, 854, 480))
+        self.assertEqual(set(m['copies']), {'lite'})
+        code, chunk = self.req('/media/%s/chunk?from=0&n=2&v=mid' % m['id'], raw=True)
+        self.assertEqual(code, 404)
         _, lib = self.req('/api/videos')
         self.assertIn(m['id'], [v['id'] for v in lib['videos']])
 

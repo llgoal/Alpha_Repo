@@ -255,17 +255,26 @@
       const px = this.canvas.width * this.canvas.height * 4;
       // Decoded bitmaps are big: at most about 120 MB of them (1.5 s at most).
       this.bmpAhead = Math.max(2, Math.min(Math.ceil(this.fps * 1.5), Math.floor(120e6 / px)));
-      // Compressed frames are small: keep up to ~10 s of them, fetched in
-      // half-second chunks, nearest first, two requests at a time, so the
-      // frames needed next are never stuck behind ones needed later.
-      this.blobAhead = Math.max(this.bmpAhead, Math.ceil(this.fps * 10));
+      // Frames come in half-second chunks, nearest first, two requests at a
+      // time. The next few seconds are fetched at a quality the connection
+      // can surely carry; with the bandwidth left over, frames further ahead
+      // are fetched (or fetched again) at the best quality that can arrive
+      // in time. So playback stays smooth and the picture gets sharper as
+      // the buffer grows, or while paused.
       this.chunk = Math.max(4, Math.round(this.fps / 2));
       this.chunkLoading = new Set();
       this.useChunks = true;
-      // Full frames when the connection keeps up, otherwise the small copy
-      // (360p). Starts small when there is one, and moves up once measured.
-      this.mainBps = (meta.frameBytes || meta.bytes || 0) / Math.max(0.1, meta.duration || this.duration);
-      this.setTier(meta.lite ? 'lite' : 'main');
+      const dur = Math.max(0.1, meta.duration || this.duration);
+      const copies = meta.copies || (meta.lite ? { lite: meta.liteBytes || 0 } : {});
+      // Qualities, worst first: the smaller copies, then the full frames.
+      this.tiers = ['lite', 'mid'].filter(n => n in copies).map(n => ({ v: n, bps: copies[n] / dur }))
+        .concat([{ v: null, bps: (meta.frameBytes || meta.bytes || 0) / dur }]);
+      this.top = this.tiers.length - 1;
+      this.base = 0;
+      this.safe = Math.ceil(this.fps * 6);
+      // Up to a minute ahead, or about 80 MB of full frames.
+      const perFrame = this.tiers[this.top].bps / this.fps || 1;
+      this.blobAhead = Math.max(this.safe, Math.min(Math.ceil(this.fps * 60), Math.floor(80e6 / perFrame)));
       this.net = { bytes: 0, busy: 0, since: 0 };
       this.asked = new Set();
       this.wall = { base: 0, at: performance.now() };
@@ -294,7 +303,6 @@
       for (const e of this.cache.values()) if (e.bitmap) e.bitmap.close();
       this.cache.clear();
       this.inflight = 0;
-      $('tierBadge').hidden = true;
       this.setAudioSource('');
       this.meta = null;
     }
@@ -346,26 +354,27 @@
       // Bytes per second; unknown until enough has come in.
       return busy > 300 || this.net.bytes > 3e5 ? this.net.bytes / Math.max(busy, 1) * 1000 : 0;
     }
-    pickTier() {
-      if (!this.meta.lite || !this.mainBps) return;
-      const sp = this.speed(), need = this.mainBps * this.rate;
+    // The quality for the next few seconds: the best one the connection
+    // carries with room to spare (the worst one until it is measured).
+    pickBase() {
+      const sp = this.speed(), r = this.rate;
       if (!sp) return;
-      if (this.tier === 'main' && sp < need * 1.15) this.setTier('lite');
-      else if (this.tier === 'lite' && sp > need * 1.6) this.setTier('main');
-    }
-    setTier(t) {
-      this.tier = t;
-      $('tierBadge').hidden = t !== 'lite';
+      let b = 0;
+      for (let t = 1; t <= this.top; t++) {
+        const margin = t <= this.base ? 1.1 : 1.3;   // slower to drop than to rise
+        if (this.tiers[t].bps * r * margin < sp) b = t;
+      }
+      this.base = b;
     }
     fetchBlob(i) {
-      const e = this.entry(i), gen = this.gen, tier = this.tier;
+      const e = this.entry(i), gen = this.gen, q = this.base, v = this.tiers[q].v;
       if (e.blob || e.loading) return;
       e.loading = true;
       this.netStart();
       let got = 0;
-      fetch(media(this.meta.id, (tier === 'lite' ? 'lite/' : 'frames/') + frameName(i)))
+      fetch(media(this.meta.id, (v || 'frames') + '/' + frameName(i)))
         .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
-        .then(b => { got = b.size; if (gen === this.gen) { e.blob = b; e.lite = tier === 'lite'; } })
+        .then(b => { got = b.size; if (gen === this.gen) { e.blob = b; e.q = q; } })
         .catch(() => {})
         .finally(() => { if (gen === this.gen) { e.loading = false; this.netEnd(got); } });
     }
@@ -373,35 +382,38 @@
       const e = this.entry(i), gen = this.gen;
       if (!e.blob || e.bitmap || e.decoding) return;
       e.decoding = true;
-      createImageBitmap(e.blob)
-        .then(bm => { if (gen === this.gen && this.cache.get(i) === e) e.bitmap = bm; else bm.close(); })
+      const blob = e.blob;
+      createImageBitmap(blob)
+        .then(bm => { if (gen === this.gen && this.cache.get(i) === e && e.blob === blob) e.bitmap = bm; else bm.close(); })
         .catch(() => {})
         .finally(() => { e.decoding = false; });
     }
-    fetchChunk(c) {
-      const gen = this.gen, from = c * this.chunk, n = Math.min(this.chunk, this.count - from), tier = this.tier;
+    fetchChunk(c, q) {
+      const gen = this.gen, from = c * this.chunk, n = Math.min(this.chunk, this.count - from), v = this.tiers[q].v;
       this.chunkLoading.add(c);
       this.netStart();
       let got = 0;
-      const url = media(this.meta.id, 'chunk') + `&from=${from}&n=${n}` + (tier === 'lite' ? '&v=lite' : '');
+      const url = media(this.meta.id, 'chunk') + `&from=${from}&n=${n}` + (v ? '&v=' + v : '');
       // Asked before: the browser's cache may answer, which says nothing
       // about the network, so it is left out of the speed estimate.
       const again = this.asked.has(url);
       this.asked.add(url);
       fetch(url)
-        .then(r => { if (r.status === 404) this.useChunks = false; if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then(r => { if (r.status === 404 && !v) this.useChunks = false; if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
         .then(buf => {
           if (!again) got = buf.byteLength;
           if (gen !== this.gen) return;
-          const v = new DataView(buf), k = v.getUint32(0);
+          const dv = new DataView(buf), k = dv.getUint32(0);
           let off = 4 + 4 * k;
           for (let j = 0; j < k; j++) {
-            const len = v.getUint32(4 + 4 * j);
-            const e = this.entry(from + j);
-            // A full frame replaces a small one, unless it is already on screen soon.
-            if (!e.blob || (e.lite && tier === 'main' && !e.bitmap)) {
+            const len = dv.getUint32(4 + 4 * j), i = from + j;
+            const e = this.entry(i);
+            // A better frame replaces a worse one, unless that one is
+            // decoded and about to be shown.
+            if (!e.blob || (e.q < q && (!e.bitmap || i > this.cur + this.bmpAhead))) {
+              if (e.bitmap) { e.bitmap.close(); e.bitmap = null; }
               e.blob = new Blob([new Uint8Array(buf, off, len)], { type: 'image/jpeg' });
-              e.lite = tier === 'lite';
+              e.q = q;
             }
             off += len;
           }
@@ -409,35 +421,57 @@
         .catch(() => {})
         .finally(() => { if (gen === this.gen) { this.chunkLoading.delete(c); this.netEnd(got); } });
     }
+    // Worst quality held for chunk c from frame cur on (-1: some missing).
+    chunkQ(c, cur) {
+      const from = c * this.chunk, to = Math.min(this.count, from + this.chunk);
+      let q = Infinity;
+      for (let i = Math.max(from, cur); i < to; i++) {
+        const e = this.cache.get(i);
+        q = Math.min(q, e && e.blob ? e.q : -1);
+        if (q < 0) break;
+      }
+      return q;
+    }
     schedule(cur) {
-      this.pickTier();
-      // On the small copy, look less far ahead: what is fetched early would
-      // only be fetched again once the connection allows full frames.
-      const last = Math.min(this.count - 1, cur + (this.tier === 'lite' ? Math.ceil(this.fps * 6) : this.blobAhead));
+      this.cur = cur;
+      this.pickBase();
+      const last = Math.min(this.count - 1, cur + this.blobAhead);
       if (this.useChunks) {
-        // Nearest chunks first, at most 2 requests at a time. With full frames,
-        // small ones more than 3 s ahead are fetched again in full.
-        const upgradeFrom = this.tier === 'main' ? cur + Math.ceil(this.fps * 3) : Infinity;
-        for (let c = Math.floor(cur / this.chunk); c * this.chunk <= last && this.inflight < 2; c++) {
-          if (this.chunkLoading.has(c)) continue;
-          const from = c * this.chunk, to = Math.min(this.count, from + this.chunk);
-          let missing = false;
-          for (let i = Math.max(from, cur); i < to; i++) {
-            const e = this.cache.get(i);
-            if (!e || !e.blob || (e.lite && from >= upgradeFrom)) { missing = true; break; }
+        const first = Math.floor(cur / this.chunk), lastC = Math.floor(last / this.chunk);
+        const safeC = Math.floor(Math.min(this.count - 1, cur + this.safe) / this.chunk);
+        // 1. The next few seconds, at the base quality, nearest first.
+        let needSafe = false;
+        for (let c = first; c <= safeC && this.inflight < 2; c++) {
+          if (this.chunkLoading.has(c) || this.chunkQ(c, cur) >= 0) continue;
+          needSafe = true;
+          this.fetchChunk(c, this.base);
+        }
+        // 2. With what is left, better frames further ahead: for each chunk,
+        // nearest first, the best quality that arrives well before it plays.
+        const sp = this.speed();
+        if (!needSafe && this.inflight < 2 && sp) {
+          const from = Math.floor((cur + this.fps) / this.chunk);
+          for (let c = Math.max(first, from); c <= lastC; c++) {
+            if (this.chunkLoading.has(c)) continue;
+            const have = this.chunkQ(c, cur);
+            if (have >= this.top) continue;
+            const lead = (c * this.chunk - cur) / this.fps / this.rate;   // seconds until it plays
+            let pick = -1;
+            for (let t = this.top; t > have; t--) {
+              const secs = this.tiers[t].bps * this.chunk / this.fps / sp;
+              if (secs + 0.3 < lead * 0.7) { pick = t; break; }
+            }
+            if (pick >= 0) { this.fetchChunk(c, pick); break; }
           }
-          if (missing) this.fetchChunk(c);
         }
       } else {
-        for (let i = cur; i <= last && this.inflight < 6; i++) {
+        for (let i = cur; i <= Math.min(last, cur + this.safe) && this.inflight < 6; i++) {
           const e = this.cache.get(i);
           if (!e || (!e.blob && !e.loading)) this.fetchBlob(i);
         }
       }
       const lastBmp = Math.min(this.count - 1, cur + this.bmpAhead);
-      // Keep whole chunks (the last one may reach past \`last\`), and what the
-      // longer full-frame window would keep, so switching does not drop frames.
-      const keepTo = cur + this.blobAhead + this.chunk + 2;
+      const keepTo = cur + this.blobAhead + this.chunk + 2;   // whole chunks
       for (let i = cur; i <= lastBmp; i++) this.decode(i);
       // Let go of what is far behind or far ahead (after a seek).
       for (const [i, e] of this.cache) {
@@ -580,6 +614,7 @@
       if (i !== this.drawn && e && e.bitmap) {
         this.ctx.drawImage(e.bitmap, 0, 0, this.canvas.width, this.canvas.height);
         this.drawn = i;
+        this.shownQ = e.q;
         this.updateReadout(i);
       }
     }
@@ -587,7 +622,7 @@
     updateReadout(i) {
       $('curTime').textContent = fmtTime(i / this.fps);
       if (!scrubbing) $('timeline').value = String(i);
-      window.__frameState = { frame: i, time: this.now(), audio: this.hasAudio ? this.audio.currentTime : null, playing: this.playing, stalled: this.stalled, dropped: this.dropped, tier: this.tier, mbps: +(this.speed() * 8 / 1e6).toFixed(1) };
+      window.__frameState = { frame: i, time: this.now(), audio: this.hasAudio ? this.audio.currentTime : null, playing: this.playing, stalled: this.stalled, dropped: this.dropped, tier: this.base, shown: this.shownQ, mbps: +(this.speed() * 8 / 1e6).toFixed(1) };
     }
     updateButton() {
       $('playBtn').innerHTML = this.playing ? ICONS.pause : ICONS.play;
