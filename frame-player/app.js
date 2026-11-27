@@ -2,374 +2,841 @@
   'use strict';
 
   const $ = id => document.getElementById(id);
-  const els = {
-    form: $('urlForm'), url: $('videoUrl'), clearUrl: $('clearUrl'), file: $('fileInput'),
-    canvas: $('frameCanvas'), youtubeLayer: $('youtubeLayer'), stage: $('stage'),
-    empty: $('emptyState'), loading: $('loading'), status: $('stageStatus'), frameReadout: $('frameReadout'),
-    currentFrame: $('currentFrame'), timeline: $('timeline'), currentTime: $('currentTime'), duration: $('duration'),
-    sourceName: $('sourceName'), prev: $('prevFrame'), play: $('playPause'), next: $('nextFrame'),
-    rate: $('playbackRate'), fps: $('fps'), mute: $('mute'), fullscreen: $('fullscreen'), message: $('message')
+  const KEY_STORE = 'framestudio.key';
+  const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+  const ICONS = {
+    play: svg('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>'),
+    pause: svg('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>'),
+    prev: svg('<rect x="5" y="5" width="2.5" height="14" rx="1"/><path d="M19 6.2v11.6a.9.9 0 0 1-1.4.75L9.3 12.75a.9.9 0 0 1 0-1.5l8.3-5.8a.9.9 0 0 1 1.4.75z"/>'),
+    next: svg('<rect x="16.5" y="5" width="2.5" height="14" rx="1"/><path d="M5 6.2v11.6a.9.9 0 0 0 1.4.75l8.3-5.8a.9.9 0 0 0 0-1.5L6.4 5.45A.9.9 0 0 0 5 6.2z"/>'),
+    sound: svg('<path d="M4 9.5v5a1 1 0 0 0 1 1h3l4.3 3.6a.8.8 0 0 0 1.3-.6V5.5a.8.8 0 0 0-1.3-.6L8 8.5H5a1 1 0 0 0-1 1z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'),
+    muted: svg('<path d="M4 9.5v5a1 1 0 0 0 1 1h3l4.3 3.6a.8.8 0 0 0 1.3-.6V5.5a.8.8 0 0 0-1.3-.6L8 8.5H5a1 1 0 0 0-1 1z"/><path d="M17 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'),
+    fs: svg('<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
+    fsExit: svg('<path d="M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
   };
-  const ctx = els.canvas.getContext('2d', { alpha: false });
-  const state = {
-    ready: false, mode: null, loadId: 0, playing: false, playbackToken: 0,
-    decoder: null, frameQueue: [], samples: [], presentation: [], timestampIndex: new Map(), decoderConfig: null,
-    currentIndex: 0, duration: 0, youtubePlayer: null, youtubeTimer: 0
-  };
-  let mp4boxPromise = null;
-  let youtubeApiPromise = null;
-  const controls = [els.prev, els.play, els.next, els.rate, els.mute, els.fullscreen, els.timeline];
 
-  function setControls(enabled) {
-    controls.forEach(control => { control.disabled = !enabled; });
-    els.mute.disabled = !enabled || state.mode === 'canvas';
-    els.fps.disabled = enabled && state.mode === 'canvas';
+  // ------------------------------------------------------------ key + API
+  // Some browsers (car browsers, private mode) block localStorage, so the key
+  // is also kept in a cookie, and in the address when neither works.
+  function saveKey(k) {
+    try { localStorage.setItem(KEY_STORE, k); } catch {}
+    try { document.cookie = `fskey=${encodeURIComponent(k)}; max-age=315360000; path=/; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`; } catch {}
+    return storedKey() === k;
   }
-  function setStatus(label, isError = false) { els.status.textContent = label; els.status.classList.toggle('error', isError); }
-  function showMessage(text, kind = 'error') { els.message.textContent = text; els.message.className = `message${kind === 'info' ? ' info' : ''}`; els.message.hidden = false; }
-  function hideMessage() { els.message.hidden = true; els.message.textContent = ''; }
-  function formatTime(seconds) {
-    if (!Number.isFinite(seconds) || seconds < 0) return '00:00.000';
-    const hours = Math.floor(seconds / 3600), minutes = Math.floor((seconds % 3600) / 60), secs = Math.floor(seconds % 60), millis = Math.floor((seconds % 1) * 1000);
-    const base = `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
-    return hours ? `${String(hours).padStart(2, '0')}:${base}` : base;
+  function storedKey() {
+    try { const k = localStorage.getItem(KEY_STORE); if (k) return k; } catch {}
+    try { const m = document.cookie.match(/(?:^|;\s*)fskey=([^;]+)/); if (m) return decodeURIComponent(m[1]); } catch {}
+    return '';
   }
-  function selectedFps() { return Math.max(1, Number(els.fps.value) || 30); }
-  function youtubeState() { try { return state.youtubePlayer ? state.youtubePlayer.getPlayerState() : -1; } catch { return -1; } }
-  function isPlaying() { return state.ready && (state.mode === 'youtube' ? youtubeState() === 1 : state.playing); }
-  function currentCanvasTime() {
-    const sample = state.presentation[state.currentIndex];
-    return sample ? sample.cts / sample.timescale : 0;
+  function cleanKey(raw) {
+    raw = String(raw || '').trim();
+    const m = raw.match(/key=([^&\s]+)/);   // a whole pasted link works too
+    return decodeURIComponent(m ? m[1] : raw);
   }
-  function currentTimeValue() {
-    if (state.mode === 'youtube') { try { return Number(state.youtubePlayer.getCurrentTime()) || 0; } catch { return 0; } }
-    return currentCanvasTime();
-  }
-  function durationValue() {
-    if (state.mode === 'youtube') { try { return Number(state.youtubePlayer.getDuration()) || 0; } catch { return 0; } }
-    return state.duration;
-  }
-  function updateReadout(mediaTime = currentTimeValue()) {
-    if (!state.ready) return;
-    const duration = durationValue();
-    const progress = duration > 0 ? Math.min(1000, Math.max(0, mediaTime / duration * 1000)) : 0;
-    els.timeline.value = String(progress); els.timeline.style.setProperty('--progress', `${progress / 10}%`);
-    els.currentTime.textContent = formatTime(mediaTime); els.duration.textContent = formatTime(duration);
-    const frame = state.mode === 'canvas' ? state.currentIndex + 1 : Math.max(0, Math.round(mediaTime * selectedFps()));
-    els.currentFrame.textContent = String(frame).padStart(6, '0');
-  }
-  function updatePlayButton() {
-    const playing = isPlaying(); els.play.classList.toggle('playing', playing);
-    els.play.setAttribute('aria-label', playing ? '暂停' : '播放');
-    setStatus(playing ? 'PLAYING' : state.ready ? (state.mode === 'canvas' ? 'WEBCODECS READY' : 'PAUSED') : 'READY');
-  }
-  function sourceName(url) {
-    try { const parsed = new URL(url); const name = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || parsed.hostname); return name.length > 50 ? `${name.slice(0, 47)}…` : name; }
-    catch { return 'REMOTE MP4'; }
-  }
-  function closeFrameQueue() { for (const item of state.frameQueue) item.frame.close(); state.frameQueue = []; }
-  function stopCanvasPlayback(update = true) {
-    state.playing = false; state.playbackToken++; closeFrameQueue();
-    if (state.decoder) { try { state.decoder.close(); } catch {} state.decoder = null; }
-    if (update) updatePlayButton();
-  }
-  function stopYoutubeTimer() { if (state.youtubeTimer) clearInterval(state.youtubeTimer); state.youtubeTimer = 0; }
-  function startYoutubeTimer() { stopYoutubeTimer(); state.youtubeTimer = window.setInterval(() => { if (state.mode === 'youtube' && state.ready) updateReadout(); }, 150); }
-
-  function resetSource() {
-    state.loadId++; state.ready = false; stopCanvasPlayback(false); stopYoutubeTimer(); state.mode = null;
-    state.samples = []; state.presentation = []; state.timestampIndex = new Map(); state.decoderConfig = null; state.currentIndex = 0; state.duration = 0;
-    if (state.youtubePlayer) { try { state.youtubePlayer.destroy(); } catch {} state.youtubePlayer = null; }
-    els.youtubeLayer.hidden = true; els.youtubeLayer.innerHTML = '<div id="youtubePlayer"></div>'; els.canvas.hidden = false;
-    setControls(false); els.fps.disabled = false; els.frameReadout.hidden = true; els.empty.hidden = false; els.loading.hidden = true;
-    els.canvas.width = 300; els.canvas.height = 150; ctx.fillStyle = '#060608'; ctx.fillRect(0, 0, 300, 150);
-    els.currentTime.textContent = '00:00.000'; els.duration.textContent = '00:00.000'; els.sourceName.textContent = 'NO SOURCE';
-    els.timeline.value = '0'; els.timeline.style.setProperty('--progress', '0%'); els.rate.value = '1'; els.mute.classList.remove('muted'); updatePlayButton();
-  }
-
-  function getMP4Box() {
-    if (!mp4boxPromise) mp4boxPromise = import('https://cdn.jsdelivr.net/npm/mp4box@2.4.1/+esm');
-    return mp4boxPromise;
-  }
-  function decoderDescription(MP4Box, file, track) {
-    const trak = file.getTrackById(track.id);
-    for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-      const box = entry.avcC || entry.hvcC || entry.vpcC || entry.av1C;
-      if (!box) continue;
-      const stream = new MP4Box.DataStream(undefined, 0, MP4Box.DataStream.BIG_ENDIAN);
-      box.write(stream); return new Uint8Array(stream.buffer, 8);
+  function readKey() {
+    const m = location.hash.match(/key=([^&]+)/);
+    if (m) {
+      const k = decodeURIComponent(m[1]);
+      if (saveKey(k)) history.replaceState(null, '', location.pathname + location.search);
+      return k;
     }
-    throw new Error('unsupported-codec');
+    return storedKey();
   }
-  async function feedLocalFile(file, mp4, loadId) {
-    const chunkSize = 2 * 1024 * 1024;
-    for (let offset = 0; offset < file.size; offset += chunkSize) {
-      if (loadId !== state.loadId) throw new Error('cancelled');
-      const buffer = await file.slice(offset, Math.min(file.size, offset + chunkSize)).arrayBuffer();
-      buffer.fileStart = offset; mp4.appendBuffer(buffer);
-      setStatus(`READING ${Math.round(Math.min(file.size, offset + buffer.byteLength) / file.size * 100)}%`);
+  let key = readKey();
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: { 'X-Frame-Key': key, ...(opts.headers || {}) } });
+    let body = {};
+    try { body = await res.json(); } catch {}
+    if (res.status === 401) { showKeyCard(); throw new Error('key'); }
+    if (!res.ok || body.ok === false) throw new Error(body.error || `HTTP ${res.status}`);
+    return body;
+  }
+  const media = (id, file) => `/media/${id}/${file}?k=${encodeURIComponent(key)}`;
+  const frameName = i => String(i + 1).padStart(6, '0') + '.jpg';
+
+  let keyTried = false;
+  function showKeyCard() {
+    $('keyCard').hidden = false;
+    setServer('bad', keyTried ? 'Wrong key' : 'Key needed');
+    if (keyTried) keyHint('That key did not work. Try the 8-digit PIN.');
+  }
+  $('keyForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const raw = $('keyInput').value.trim();
+    const digits = raw.replace(/[\s-]/g, '');
+    $('keyHint').hidden = true;
+    if (/^\d{4,12}$/.test(digits)) {
+      // The short PIN: the Mac mini trades it for the real key.
+      try {
+        const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: digits }) });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { keyHint(res.status === 429 ? body.error : 'Wrong PIN. Check the 8 digits on the Mac mini.'); return; }
+        key = body.key;
+      } catch { keyHint('Cannot reach the Mac mini.'); return; }
+    } else key = cleanKey(raw);
+    if (!saveKey(key)) history.replaceState(null, '', location.pathname + location.search + '#key=' + encodeURIComponent(key));
+    keyTried = true;
+    $('keyInput').value = '';
+    $('keyCard').hidden = true;
+    refresh();
+  });
+  function keyHint(text) { $('keyHint').textContent = text; $('keyHint').hidden = false; }
+
+  function setServer(kind, text) {
+    $('serverStatus').className = 'server ' + kind;
+    $('serverText').textContent = text;
+  }
+
+  // ------------------------------------------------------------ helpers
+  function fmtTime(s, precise = true) {
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60), sec = s - m * 60;
+    const h = Math.floor(m / 60);
+    const ss = precise ? sec.toFixed(2).padStart(5, '0') : String(Math.floor(sec)).padStart(2, '0');
+    return h ? `${h}:${String(m % 60).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+  }
+  function fmtBytes(n) {
+    if (!n) return '';
+    const u = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(n >= 100 || i === 0 ? 0 : 1)} ${u[i]}`;
+  }
+  const fmtFps = f => (Math.round(f * 100) / 100) + ' fps';
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function note(text, isError = false) {
+    const el = $('newNote');
+    el.hidden = !text;
+    el.textContent = text || '';
+    el.classList.toggle('error', isError);
+  }
+
+  // ------------------------------------------------------------ sound
+  // Some browsers (the Tesla one among them) refuse to start an <audio>
+  // element. Web Audio is a separate path: the whole track is decoded into
+  // memory and played from there. It offers the same few things the player
+  // uses from an <audio> element, so the two can be swapped.
+  let sharedCtx = null;
+  function audioCtx() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!sharedCtx && AC) { try { sharedCtx = new AC(); } catch {} }
+    if (sharedCtx && sharedCtx.state === 'suspended') sharedCtx.resume().catch(() => {});
+    return sharedCtx;
+  }
+  class WebAudioOut {
+    constructor(onended) {
+      this.onended = onended;
+      this.url = ''; this.data = null; this.buf = null;
+      this.node = null; this.want = false;
+      this._t = 0; this._rate = 1; this._muted = false; this.startAt = 0;
+      this.ctx = audioCtx();
+      if (this.ctx) { this.gain = this.ctx.createGain(); this.gain.connect(this.ctx.destination); }
     }
+    setSource(url) {
+      this.stopNode(); this.want = false; this.buf = null; this._t = 0; this.url = url || '';
+      this.data = url ? fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }) : null;
+    }
+    async decoded() {
+      if (this.buf) return this.buf;
+      const url = this.url, data = await this.data;
+      const buf = await new Promise((res, rej) => this.ctx.decodeAudioData(data.slice(0), res, rej));
+      if (url === this.url) this.buf = buf;
+      return buf;
+    }
+    async play() {
+      if (!this.ctx || !this.data) throw new Error('no web audio');
+      this.want = true;
+      await this.ctx.resume();
+      if (this.ctx.state !== 'running') throw new Error('blocked');
+      await this.decoded();
+      if (this.want && !this.node) this.startNode();
+    }
+    pause() { this.want = false; if (this.node) { this._t = this.currentTime; this.stopNode(); } }
+    startNode() {
+      const n = this.ctx.createBufferSource();
+      n.buffer = this.buf; n.playbackRate.value = this._rate; n.connect(this.gain);
+      n.onended = () => { if (this.node === n) { this.node = null; this._t = this.buf.duration; if (this.onended) this.onended(); } };
+      this.startAt = this.ctx.currentTime;
+      n.start(0, Math.max(0, Math.min(this._t, this.buf.duration)));
+      this.node = n;
+    }
+    stopNode() { const n = this.node; this.node = null; if (n) { try { n.stop(); } catch {} n.disconnect(); } }
+    get currentTime() {
+      if (!this.node) return this._t;
+      return Math.min(this.buf.duration, this._t + (this.ctx.currentTime - this.startAt) * this._rate);
+    }
+    set currentTime(t) {
+      if (this.node) { this.stopNode(); this._t = t; this.startNode(); } else this._t = t;
+    }
+    get playbackRate() { return this._rate; }
+    set playbackRate(r) {
+      if (this.node) { this._t = this.currentTime; this.startAt = this.ctx.currentTime; this.node.playbackRate.value = r; }
+      this._rate = r;
+    }
+    get muted() { return this._muted; }
+    set muted(m) { this._muted = m; if (this.gain) this.gain.gain.value = m ? 0 : 1; }
   }
-  async function feedRemoteFile(url, mp4, loadId) {
-    const chunkSize = 2 * 1024 * 1024; let offset = 0, total = null;
-    while (total === null || offset < total) {
-      if (loadId !== state.loadId) throw new Error('cancelled');
-      const response = await fetch(url, { headers: { Range: `bytes=${offset}-${offset + chunkSize - 1}` } });
-      if (!response.ok) throw new Error('fetch');
-      const buffer = await response.arrayBuffer();
-      if (response.status !== 206) {
-        if (offset !== 0) throw new Error('range');
-        buffer.fileStart = 0; mp4.appendBuffer(buffer); setStatus('READING 100%'); return;
+
+  // ------------------------------------------------------------ frame player
+  // Frames are JPEGs on the server. The audio element is the clock: at audio
+  // time t the stage shows frame floor((t - audioOffset) * fps). Without
+  // audio a wall clock stands in. Frames ahead of the playhead are fetched
+  // as compressed blobs (cheap) and the nearest ones decoded to bitmaps.
+  class Player {
+    constructor() {
+      this.canvas = $('canvas');
+      this.ctx = this.canvas.getContext('2d', { alpha: false });
+      this.audio = new Audio();
+      this.audio.preload = 'auto';
+      this.audio.preservesPitch = true;
+      this.meta = null;
+      this.cache = new Map();         // index -> {blob, bitmap, loading, decoding}
+      this.inflight = 0;
+      this.playing = false;
+      this.stalled = false;
+      this.drawn = -1;
+      this.wall = { base: 0, at: 0 }; // clock when there is no audio
+      this.smooth = { t: 0, at: 0 };  // smooths coarse audio.currentTime
+      this.gen = 0;
+      this.dropped = 0;
+      this.audio.addEventListener('ended', () => this.finish());
+      this.loop = this.loop.bind(this);
+      requestAnimationFrame(this.loop);
+    }
+
+    get fps() { return this.meta ? this.meta.fps : 30; }
+    get count() { return this.meta ? this.meta.frames : 0; }
+    get duration() { return this.count / this.fps; }
+    // Last moment of the clock: the frames start audioOffset into the audio.
+    get end() { return this.duration + (this.hasAudio ? Math.max(0, this.meta.audioOffset || 0) : 0); }
+    get rate() { return Number($('rateSelect').value) || 1; }
+    get hasAudio() { return !!(this.meta && this.meta.hasAudio && !this.silent); }
+    setAudioSource(url) {
+      if (this.audio instanceof WebAudioOut) return this.audio.setSource(url);
+      if (url) { this.audio.src = url; this.audio.load(); }
+      else { this.audio.removeAttribute('src'); this.audio.load(); }
+    }
+    // The <audio> element was refused: try Web Audio, and if that is refused
+    // too, keep the picture going without sound.
+    audioFailed() {
+      if (!this.playing) return;
+      const t = this.now();
+      if (!(this.audio instanceof WebAudioOut)) {
+        this.audio.pause();
+        this.audio = new WebAudioOut(() => this.finish());
+        this.audio.muted = userMuted;
+        this.audio.playbackRate = this.rate;
+        this.audio.setSource(media(this.meta.id, 'audio.m4a'));
+        this.audio.currentTime = t;
+        this.smooth = { t, at: performance.now() };
+        this.audio.play().catch(() => this.audioFailed());
+        return;
       }
-      const match = (response.headers.get('content-range') || '').match(/\/(\d+)$/);
-      if (!match || buffer.byteLength === 0) throw new Error('range');
-      total = Number(match[1]); buffer.fileStart = offset; mp4.appendBuffer(buffer); offset += buffer.byteLength;
-      setStatus(`READING ${Math.round(offset / total * 100)}%`);
+      this.audio.pause();
+      this.silent = true;
+      this.wall = { base: t, at: performance.now() };
+      note('This browser does not allow sound here; playing without sound.', true);
     }
-  }
-  async function demuxMP4(source, loadId) {
-    const MP4Box = await getMP4Box();
-    if (loadId !== state.loadId) throw new Error('cancelled');
-    const file = MP4Box.createFile(); const samples = [];
-    let track = null, config = null, resolveReady, rejectReady;
-    const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
-    file.onError = () => rejectReady(new Error('demux'));
-    file.onReady = info => {
-      track = info.videoTracks && info.videoTracks[0];
-      if (!track) { rejectReady(new Error('no-video')); return; }
-      try {
-        config = {
-          codec: track.codec.startsWith('vp08') ? 'vp8' : track.codec,
-          codedWidth: track.video.width, codedHeight: track.video.height,
-          description: decoderDescription(MP4Box, file, track)
-        };
-        file.setExtractionOptions(track.id, null, { nbSamples: 100 }); file.start(); resolveReady();
-      } catch (error) { rejectReady(error); }
-    };
-    file.onSamples = (_id, _user, batch) => { for (const sample of batch) samples.push(sample); };
-    if (source instanceof Blob) await feedLocalFile(source, file, loadId); else await feedRemoteFile(source, file, loadId);
-    file.flush(); await ready; await new Promise(resolve => setTimeout(resolve, 0));
-    if (!samples.length) throw new Error('no-samples');
-    const support = await VideoDecoder.isConfigSupported(config);
-    if (!support.supported) throw new Error('unsupported-codec');
-    samples.forEach((sample, index) => { sample.decodeIndex = index; });
-    const presentation = [...samples].sort((a, b) => a.cts - b.cts || a.dts - b.dts);
-    presentation.forEach((sample, index) => { sample.presentationIndex = index; });
-    const last = presentation[presentation.length - 1];
-    return { samples, presentation, config: support.config, duration: (last.cts + last.duration) / last.timescale };
-  }
-  function chunkFromSample(sample) {
-    return new EncodedVideoChunk({
-      type: sample.is_sync ? 'key' : 'delta', timestamp: Math.round(1e6 * sample.cts / sample.timescale),
-      duration: Math.round(1e6 * sample.duration / sample.timescale), data: sample.data
-    });
-  }
-  async function waitForDecoder(decoder, maxQueue = 16) {
-    while (decoder.state === 'configured' && decoder.decodeQueueSize > maxQueue) await new Promise(resolve => setTimeout(resolve, 4));
-  }
-  function drawVideoFrame(frame, index) {
-    const width = frame.displayWidth || frame.codedWidth, height = frame.displayHeight || frame.codedHeight;
-    if (els.canvas.width !== width || els.canvas.height !== height) { els.canvas.width = width; els.canvas.height = height; }
-    ctx.fillStyle = '#050507'; ctx.fillRect(0, 0, width, height); ctx.drawImage(frame, 0, 0, width, height);
-    state.currentIndex = index; updateReadout();
-  }
-  async function renderCanvasFrame(index) {
-    if (!state.ready || state.mode !== 'canvas') return;
-    stopCanvasPlayback(false); const token = state.playbackToken;
-    index = Math.max(0, Math.min(state.presentation.length - 1, index));
-    const target = state.presentation[index], targetTimestamp = Math.round(1e6 * target.cts / target.timescale);
-    let start = target.decodeIndex;
-    while (start > 0 && !state.samples[start].is_sync) start--;
-    let end = target.decodeIndex + 1;
-    while (end < state.samples.length && !state.samples[end].is_sync) end++;
-    let bestFrame = null, bestDiff = Infinity, decoderError = null;
-    const decoder = new VideoDecoder({
-      output: frame => {
-        const diff = Math.abs(frame.timestamp - targetTimestamp);
-        if (diff < bestDiff) { if (bestFrame) bestFrame.close(); bestFrame = frame; bestDiff = diff; } else frame.close();
-      }, error: error => { decoderError = error; }
-    });
-    state.decoder = decoder; decoder.configure(state.decoderConfig); setStatus('DECODING FRAME');
-    try {
-      for (let i = start; i < end; i++) { if (token !== state.playbackToken) throw new Error('cancelled'); decoder.decode(chunkFromSample(state.samples[i])); await waitForDecoder(decoder); }
-      await decoder.flush();
-      if (decoderError || !bestFrame) throw decoderError || new Error('decode');
-      if (token === state.playbackToken) drawVideoFrame(bestFrame, index);
-    } finally {
-      if (bestFrame) bestFrame.close(); if (decoder.state !== 'closed') decoder.close(); if (state.decoder === decoder) state.decoder = null; updatePlayButton();
-    }
-  }
-  async function runCanvasPlayback(token) {
-    const startSample = state.presentation[state.currentIndex]; let start = startSample.decodeIndex;
-    while (start > 0 && !state.samples[start].is_sync) start--;
-    let pumpDone = false, playbackError = null;
-    const decoder = new VideoDecoder({
-      output: frame => {
-        const timestamp = frame.timestamp;
-        const sample = state.timestampIndex.get(Math.round(timestamp));
-        if (!sample || sample.presentationIndex < state.currentIndex) frame.close();
-        else { state.frameQueue.push({ frame, index: sample.presentationIndex }); state.frameQueue.sort((a, b) => a.frame.timestamp - b.frame.timestamp); }
-      }, error: error => { playbackError = error; }
-    });
-    state.decoder = decoder; decoder.configure(state.decoderConfig);
-    const pump = (async () => {
-      try {
-        for (let i = start; i < state.samples.length && token === state.playbackToken; i++) {
-          while (token === state.playbackToken && (decoder.decodeQueueSize > 16 || state.frameQueue.length > 12)) await new Promise(resolve => setTimeout(resolve, 5));
-          if (token !== state.playbackToken) break; decoder.decode(chunkFromSample(state.samples[i]));
-        }
-        if (token === state.playbackToken) await decoder.flush();
-      } catch (error) { if (token === state.playbackToken) playbackError = error; }
-      pumpDone = true;
-    })();
-    while (token === state.playbackToken) {
-      if (playbackError) throw playbackError;
-      const item = state.frameQueue.shift();
-      if (!item) { if (pumpDone) break; await new Promise(resolve => setTimeout(resolve, 5)); continue; }
-      const sample = state.presentation[item.index];
-      const duration = Math.max(8, sample.duration / sample.timescale * 1000 / (Number(els.rate.value) || 1));
-      drawVideoFrame(item.frame, item.index); item.frame.close();
-      await new Promise(resolve => setTimeout(resolve, duration));
-    }
-    await pump; if (token === state.playbackToken) { state.playing = false; closeFrameQueue(); if (decoder.state !== 'closed') decoder.close(); state.decoder = null; updatePlayButton(); }
-  }
-  function startCanvasPlayback() {
-    stopCanvasPlayback(false); state.playing = true; const token = state.playbackToken; updatePlayButton();
-    runCanvasPlayback(token).catch(() => {
-      if (token !== state.playbackToken) return; stopCanvasPlayback(false);
-      updatePlayButton(); setStatus('DECODE ERROR', true); showMessage('播放解码失败。请尝试 H.264 编码的标准 MP4 文件。');
-    });
-  }
-  async function loadCanvasSource(source, label) {
-    resetSource(); hideMessage(); const loadId = ++state.loadId; state.mode = 'canvas';
-    els.loading.hidden = false; els.sourceName.textContent = label; setStatus('PREPARING WEBCODECS');
-    if (!('VideoDecoder' in window) || !('EncodedVideoChunk' in window)) {
-      els.loading.hidden = true; setStatus('UNSUPPORTED', true); showMessage('当前浏览器不支持 WebCodecs。请使用最新版 Chrome、Edge 或其他支持 WebCodecs 的浏览器。'); return;
-    }
-    try {
-      const result = await demuxMP4(source, loadId); if (loadId !== state.loadId) return;
-      state.samples = result.samples; state.presentation = result.presentation; state.decoderConfig = result.config; state.duration = result.duration;
-      state.timestampIndex = new Map(result.presentation.map(sample => [Math.round(1e6 * sample.cts / sample.timescale), sample]));
-      state.ready = true; els.loading.hidden = true; els.empty.hidden = true; els.frameReadout.hidden = false; setControls(true);
-      await renderCanvasFrame(0);
-    } catch (error) {
-      if (error.message === 'cancelled') return;
-      state.ready = false; els.loading.hidden = true; setControls(false); setStatus('MP4 ERROR', true);
-      const codec = error.message === 'unsupported-codec';
-      showMessage(codec ? '这个 MP4 的视频编码不受当前浏览器支持。建议使用 H.264/AVC 编码。' : '无法解析这个 MP4。直链必须允许跨域读取和 HTTP Range 请求，也可以改用本地 MP4。');
-    }
-  }
 
-  function parseStartTime(value) {
-    if (!value) return 0; if (/^\d+(?:\.\d+)?$/.test(value)) return Number(value);
-    const match = String(value).toLowerCase().match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$/);
-    return match ? (Number(match[1]) || 0) * 3600 + (Number(match[2]) || 0) * 60 + (Number(match[3]) || 0) : 0;
-  }
-  function parseYouTubeUrl(raw) {
-    let parsed; try { parsed = new URL(raw); } catch { return null; }
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, ''); let id = '';
-    if (host === 'youtu.be') id = parsed.pathname.split('/').filter(Boolean)[0] || '';
-    else if (['youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(host)) {
-      if (parsed.pathname === '/watch') id = parsed.searchParams.get('v') || '';
-      else { const parts = parsed.pathname.split('/').filter(Boolean); if (['shorts', 'embed', 'live'].includes(parts[0])) id = parts[1] || ''; }
-    } else if (host === 'youtube-nocookie.com') { const parts = parsed.pathname.split('/').filter(Boolean); if (parts[0] === 'embed') id = parts[1] || ''; }
-    else return null;
-    if (!/^[A-Za-z0-9_-]{11}$/.test(id)) throw new Error('youtube-id');
-    return { id, start: parseStartTime(parsed.searchParams.get('t') || parsed.searchParams.get('start') || '') };
-  }
-  function loadYouTubeApi() {
-    if (window.YT && window.YT.Player) return Promise.resolve(window.YT); if (youtubeApiPromise) return youtubeApiPromise;
-    youtubeApiPromise = new Promise((resolve, reject) => {
-      const previousReady = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => { if (typeof previousReady === 'function') previousReady(); resolve(window.YT); };
-      const script = document.createElement('script'); script.src = 'https://www.youtube.com/iframe_api'; script.async = true;
-      script.onerror = () => { youtubeApiPromise = null; reject(new Error('youtube-api')); }; document.head.appendChild(script);
-    }); return youtubeApiPromise;
-  }
-  async function loadYouTubeSource(video) {
-    resetSource(); hideMessage(); const loadId = ++state.loadId; state.mode = 'youtube';
-    els.loading.hidden = false; setStatus('LOADING YOUTUBE'); els.sourceName.textContent = `YOUTUBE · ${video.id}`;
-    try {
-      const YT = await loadYouTubeApi(); if (loadId !== state.loadId) return; els.youtubeLayer.hidden = false; els.canvas.hidden = true;
-      state.youtubePlayer = new YT.Player('youtubePlayer', {
-        width: '100%', height: '100%', videoId: video.id,
-        playerVars: { playsinline: 1, controls: 1, rel: 0, origin: location.origin, start: Math.floor(video.start) },
-        events: {
-          onReady: event => {
-            if (loadId !== state.loadId) return; state.ready = true; els.loading.hidden = true; els.empty.hidden = true; els.frameReadout.hidden = false; setControls(true);
-            event.target.setPlaybackRate(1); if (video.start > 0) event.target.seekTo(video.start, true); event.target.pauseVideo(); updateReadout(video.start); updatePlayButton();
-          },
-          onStateChange: event => {
-            if (loadId !== state.loadId || !state.ready) return; if (event.data === 1) startYoutubeTimer(); else { stopYoutubeTimer(); updateReadout(); }
-            if (event.data === 3) setStatus('BUFFERING'); else updatePlayButton();
-          },
-          onError: event => {
-            if (loadId !== state.loadId) return; state.ready = false; els.loading.hidden = true; setControls(false); setStatus('YOUTUBE ERROR', true);
-            showMessage(event.data === 101 || event.data === 150 ? '该视频禁止在其他网页嵌入播放。' : 'YouTube 无法播放这个视频；它可能是私密、已删除或受地区限制。');
+    open(meta) {
+      this.close();
+      this.meta = meta;
+      this.silent = false;
+      this.gen++;
+      this.canvas.width = meta.width || 1280;
+      this.canvas.height = meta.height || 720;
+      $('stage').style.aspectRatio = `${this.canvas.width} / ${this.canvas.height}`;
+      if (this.hasAudio) {
+        this.setAudioSource(media(meta.id, 'audio.m4a'));
+        this.audio.playbackRate = this.rate;
+      }
+      const px = this.canvas.width * this.canvas.height * 4;
+      // Decoded bitmaps are big: at most about 120 MB of them (1.5 s at most).
+      this.bmpAhead = Math.max(2, Math.min(Math.ceil(this.fps * 1.5), Math.floor(120e6 / px)));
+      // Frames come in half-second chunks, nearest first, two requests at a
+      // time. The next few seconds are fetched at a quality the connection
+      // can surely carry; with the bandwidth left over, frames further ahead
+      // are fetched (or fetched again) at the best quality that can arrive
+      // in time. So playback stays smooth and the picture gets sharper as
+      // the buffer grows, or while paused.
+      this.chunk = Math.max(4, Math.round(this.fps / 2));
+      this.chunkLoading = new Set();
+      this.useChunks = true;
+      const dur = Math.max(0.1, meta.duration || this.duration);
+      const copies = meta.copies || (meta.lite ? { lite: meta.liteBytes || 0 } : {});
+      // Qualities, worst first: the smaller copies, then the full frames.
+      this.tiers = ['lite', 'mid'].filter(n => n in copies).map(n => ({ v: n, bps: copies[n] / dur }))
+        .concat([{ v: null, bps: (meta.frameBytes || meta.bytes || 0) / dur }]);
+      this.top = this.tiers.length - 1;
+      this.base = 0;
+      this.safe = Math.ceil(this.fps * 6);
+      // Up to a minute ahead, or about 80 MB of full frames.
+      const perFrame = this.tiers[this.top].bps / this.fps || 1;
+      this.blobAhead = Math.max(this.safe, Math.min(Math.ceil(this.fps * 60), Math.floor(80e6 / perFrame)));
+      this.net = { bytes: 0, busy: 0, since: 0 };
+      this.asked = new Set();
+      this.wall = { base: 0, at: performance.now() };
+      this.drawn = -1;
+      this.dropped = 0;
+      $('timeline').max = String(Math.max(0, this.count - 1));
+      $('durTime').textContent = fmtTime(this.duration);
+      $('nowTitle').textContent = meta.title || '';
+      const mbps = meta.bytes && meta.duration ? meta.bytes * 8 / meta.duration / 1e6 : 0;
+      $('nowInfo').textContent = `${fmtFps(meta.fps)} · ${meta.frames} frames · ${meta.width}×${meta.height}` + (meta.hasAudio ? ' · sound' : ' · no sound')
+        + (mbps ? ` · needs about ${mbps.toFixed(mbps < 10 ? 1 : 0)} Mbps` : '');
+      $('playerCard').hidden = false;
+      // Continue where it was left, on this or another device.
+      const pos = Number(meta.position) || 0;
+      const resumeAt = pos > 3 && pos < this.duration - 3 ? pos : 0;
+      this.saved = { t: resumeAt, at: performance.now() };
+      this.seekFrame(Math.round(resumeAt * this.fps));
+      $('resumeInfo').hidden = !resumeAt;
+      if (resumeAt) $('resumeText').textContent = `Continuing from ${fmtTime(resumeAt, false)}`;
+    }
+
+    close() {
+      this.pause();
+      if (this.meta && this.saved) savePosition(this.meta.id, this.frameAt(this.now()) / this.fps);
+      this.gen++;
+      for (const e of this.cache.values()) if (e.bitmap) e.bitmap.close();
+      this.cache.clear();
+      this.inflight = 0;
+      this.setAudioSource('');
+      this.meta = null;
+    }
+
+    // --- clock
+    now() {
+      if (!this.meta) return 0;
+      if (this.hasAudio) {
+        const t = this.audio.currentTime, p = performance.now();
+        if (!this.playing || this.stalled) { this.smooth = { t, at: p }; return t; }
+        // currentTime updates in coarse steps in some browsers: run forward
+        // from the last value and resync whenever it drifts.
+        const est = this.smooth.t + (p - this.smooth.at) / 1000 * this.rate;
+        if (Math.abs(est - t) > 0.08) { this.smooth = { t, at: p }; return t; }
+        return Math.max(est, t - 0.04);
+      }
+      if (!this.playing || this.stalled) return this.wall.base;
+      return this.wall.base + (performance.now() - this.wall.at) / 1000 * this.rate;
+    }
+    setTime(t) {
+      t = Math.max(0, Math.min(this.end, t));
+      if (this.hasAudio) { try { this.audio.currentTime = t; } catch {} this.smooth = { t, at: performance.now() }; }
+      this.wall = { base: t, at: performance.now() };
+    }
+    frameAt(t) {
+      const off = this.hasAudio ? (this.meta.audioOffset || 0) : 0;
+      return Math.max(0, Math.min(this.count - 1, Math.floor((t - off) * this.fps + 1e-6)));
+    }
+    timeOf(i) { return (i + 0.5) / this.fps + (this.hasAudio ? (this.meta.audioOffset || 0) : 0); }
+
+    // --- loading
+    entry(i) {
+      let e = this.cache.get(i);
+      if (!e) { e = {}; this.cache.set(i, e); }
+      return e;
+    }
+    // --- connection speed: bytes received over the time any request was open
+    netStart() {
+      if (this.inflight++ === 0) this.net.since = performance.now();
+    }
+    netEnd(bytes) {
+      this.net.bytes += bytes;
+      if (--this.inflight === 0) this.net.busy += performance.now() - this.net.since;
+      // Weigh the last ~10 s of transfer, not the whole session.
+      if (this.net.busy > 10000) { this.net.busy /= 2; this.net.bytes /= 2; }
+    }
+    speed() {
+      const busy = this.net.busy + (this.inflight ? performance.now() - this.net.since : 0);
+      // Bytes per second; unknown until enough has come in.
+      return busy > 300 || this.net.bytes > 3e5 ? this.net.bytes / Math.max(busy, 1) * 1000 : 0;
+    }
+    // The quality for the next few seconds: the best one the connection
+    // carries with room to spare (the worst one until it is measured).
+    pickBase() {
+      const sp = this.speed(), r = this.rate;
+      if (!sp) return;
+      let b = 0;
+      for (let t = 1; t <= this.top; t++) {
+        const margin = t <= this.base ? 1.1 : 1.3;   // slower to drop than to rise
+        if (this.tiers[t].bps * r * margin < sp) b = t;
+      }
+      this.base = b;
+    }
+    fetchBlob(i) {
+      const e = this.entry(i), gen = this.gen, q = this.base, v = this.tiers[q].v;
+      if (e.blob || e.loading) return;
+      e.loading = true;
+      this.netStart();
+      let got = 0;
+      fetch(media(this.meta.id, (v || 'frames') + '/' + frameName(i)))
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+        .then(b => { got = b.size; if (gen === this.gen) { e.blob = b; e.q = q; } })
+        .catch(() => {})
+        .finally(() => { if (gen === this.gen) { e.loading = false; this.netEnd(got); } });
+    }
+    decode(i) {
+      const e = this.entry(i), gen = this.gen;
+      if (!e.blob || e.bitmap || e.decoding) return;
+      e.decoding = true;
+      const blob = e.blob;
+      createImageBitmap(blob)
+        .then(bm => { if (gen === this.gen && this.cache.get(i) === e && e.blob === blob) e.bitmap = bm; else bm.close(); })
+        .catch(() => {})
+        .finally(() => { e.decoding = false; });
+    }
+    fetchChunk(c, q) {
+      const gen = this.gen, from = c * this.chunk, n = Math.min(this.chunk, this.count - from), v = this.tiers[q].v;
+      this.chunkLoading.add(c);
+      this.netStart();
+      let got = 0;
+      const url = media(this.meta.id, 'chunk') + `&from=${from}&n=${n}` + (v ? '&v=' + v : '');
+      // Asked before: the browser's cache may answer, which says nothing
+      // about the network, so it is left out of the speed estimate.
+      const again = this.asked.has(url);
+      this.asked.add(url);
+      fetch(url)
+        .then(r => { if (r.status === 404 && !v) this.useChunks = false; if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then(buf => {
+          if (!again) got = buf.byteLength;
+          if (gen !== this.gen) return;
+          const dv = new DataView(buf), k = dv.getUint32(0);
+          let off = 4 + 4 * k;
+          for (let j = 0; j < k; j++) {
+            const len = dv.getUint32(4 + 4 * j), i = from + j;
+            const e = this.entry(i);
+            // A better frame replaces a worse one, unless that one is
+            // decoded and about to be shown.
+            if (!e.blob || (e.q < q && (!e.bitmap || i > this.cur + this.bmpAhead))) {
+              if (e.bitmap) { e.bitmap.close(); e.bitmap = null; }
+              e.blob = new Blob([new Uint8Array(buf, off, len)], { type: 'image/jpeg' });
+              e.q = q;
+            }
+            off += len;
+          }
+        })
+        .catch(() => {})
+        .finally(() => { if (gen === this.gen) { this.chunkLoading.delete(c); this.netEnd(got); } });
+    }
+    // Worst quality held for chunk c from frame cur on (-1: some missing).
+    chunkQ(c, cur) {
+      const from = c * this.chunk, to = Math.min(this.count, from + this.chunk);
+      let q = Infinity;
+      for (let i = Math.max(from, cur); i < to; i++) {
+        const e = this.cache.get(i);
+        q = Math.min(q, e && e.blob ? e.q : -1);
+        if (q < 0) break;
+      }
+      return q;
+    }
+    schedule(cur) {
+      this.cur = cur;
+      this.pickBase();
+      const last = Math.min(this.count - 1, cur + this.blobAhead);
+      if (this.useChunks) {
+        const first = Math.floor(cur / this.chunk), lastC = Math.floor(last / this.chunk);
+        const safeC = Math.floor(Math.min(this.count - 1, cur + this.safe) / this.chunk);
+        // 1. The next few seconds, at the base quality, nearest first.
+        let needSafe = false;
+        for (let c = first; c <= safeC && this.inflight < 2; c++) {
+          if (this.chunkLoading.has(c) || this.chunkQ(c, cur) >= 0) continue;
+          needSafe = true;
+          this.fetchChunk(c, this.base);
+        }
+        // 2. With what is left, better frames further ahead: for each chunk,
+        // nearest first, the best quality that arrives well before it plays.
+        const sp = this.speed();
+        if (!needSafe && this.inflight < 2 && sp) {
+          const from = Math.floor((cur + this.fps) / this.chunk);
+          for (let c = Math.max(first, from); c <= lastC; c++) {
+            if (this.chunkLoading.has(c)) continue;
+            const have = this.chunkQ(c, cur);
+            if (have >= this.top) continue;
+            const lead = (c * this.chunk - cur) / this.fps / this.rate;   // seconds until it plays
+            let pick = -1;
+            for (let t = this.top; t > have; t--) {
+              const secs = this.tiers[t].bps * this.chunk / this.fps / sp;
+              if (secs + 0.3 < lead * 0.7) { pick = t; break; }
+            }
+            if (pick >= 0) { this.fetchChunk(c, pick); break; }
           }
         }
-      });
-    } catch { if (loadId !== state.loadId) return; els.loading.hidden = true; setControls(false); setStatus('YOUTUBE ERROR', true); showMessage('无法连接 YouTube 播放器。请检查网络或内容拦截设置。'); }
-  }
-  function validateMP4Url(raw) {
-    const parsed = new URL(raw); if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('protocol');
-    if (location.protocol === 'https:' && parsed.protocol === 'http:') throw new Error('mixed-content'); return parsed.href;
-  }
-  function seekCanvasByTime(seconds) {
-    let low = 0, high = state.presentation.length - 1;
-    while (low < high) { const mid = Math.floor((low + high) / 2); if (state.presentation[mid].cts / state.presentation[mid].timescale < seconds) low = mid + 1; else high = mid; }
-    renderCanvasFrame(low).catch(() => showMessage('无法解码所选帧。'));
-  }
-  function stepFrame(direction) {
-    if (!state.ready) return;
-    if (state.mode === 'canvas') { renderCanvasFrame(state.currentIndex + direction).catch(() => showMessage('无法解码所选帧。')); return; }
-    state.youtubePlayer.pauseVideo(); stopYoutubeTimer(); const target = currentTimeValue() + direction / selectedFps(); state.youtubePlayer.seekTo(Math.max(0, target), true); updateReadout(target); setStatus('FRAME STEP');
-  }
-  function skip(seconds) {
-    if (!state.ready) return; const target = Math.max(0, Math.min(durationValue(), currentTimeValue() + seconds));
-    if (state.mode === 'canvas') seekCanvasByTime(target); else { state.youtubePlayer.seekTo(target, true); updateReadout(target); }
-  }
-  function togglePlayback() {
-    if (!state.ready) return; hideMessage();
-    if (state.mode === 'canvas') { state.playing ? stopCanvasPlayback() : startCanvasPlayback(); return; }
-    try { isPlaying() ? state.youtubePlayer.pauseVideo() : state.youtubePlayer.playVideo(); } catch { showMessage('播放被浏览器或设备策略阻止。请直接点击 YouTube 播放器后再试。'); }
-    window.setTimeout(updatePlayButton, 80);
+      } else {
+        for (let i = cur; i <= Math.min(last, cur + this.safe) && this.inflight < 6; i++) {
+          const e = this.cache.get(i);
+          if (!e || (!e.blob && !e.loading)) this.fetchBlob(i);
+        }
+      }
+      const lastBmp = Math.min(this.count - 1, cur + this.bmpAhead);
+      const keepTo = cur + this.blobAhead + this.chunk + 2;   // whole chunks
+      for (let i = cur; i <= lastBmp; i++) this.decode(i);
+      // Let go of what is far behind or far ahead (after a seek).
+      for (const [i, e] of this.cache) {
+        if (i < cur - 3 || i > keepTo) {
+          if (e.loading) continue;
+          if (e.bitmap) e.bitmap.close();
+          this.cache.delete(i);
+        } else if (e.bitmap && i > lastBmp + 2) {
+          e.bitmap.close(); e.bitmap = null;
+        }
+      }
+    }
+    // Compressed frames ready for the next `seconds` (or to the end).
+    bufferedFrom(i, seconds) {
+      const end = Math.min(this.count, i + Math.ceil(seconds * this.fps));
+      for (let k = i; k < end; k++) { const e = this.cache.get(k); if (!e || !e.blob) return false; }
+      return true;
+    }
+    readyFrom(i, n) {
+      for (let k = i; k < Math.min(this.count, i + n); k++) {
+        const e = this.cache.get(k);
+        if (!e || !e.bitmap) return false;
+      }
+      return true;
+    }
+
+    canStart(i, seconds) {
+      return this.bufferedFrom(i, seconds) && this.readyFrom(i, Math.min(this.bmpAhead, Math.max(2, Math.ceil(this.fps / 3))));
+    }
+
+    // --- playback
+    play() {
+      if (!this.meta || this.playing) return;
+      if (this.frameAt(this.now()) >= this.count - 1) this.setTime(0);
+      this.playing = true;
+      this.updateButton();
+      if (this.hasAudio) audioCtx();   // unlock Web Audio while we have the tap
+      const i = this.frameAt(this.now());
+      if (this.canStart(i, 1.5)) { this.stalled = true; this.resume(); return; }
+      this.stalled = true;   // start once a little is buffered
+      $('bufferBadge').hidden = false;
+      if (this.hasAudio && !(this.audio instanceof WebAudioOut)) {
+        // Phones only let audio start from a tap: start it now, hold it
+        // until the frames are ready, then the loop lets it run.
+        const t = this.now();
+        this.audio.muted = true;
+        this.audio.play().then(() => {
+          if (this.stalled || !this.playing) { this.audio.pause(); this.setTime(t); }
+        }).catch(() => {}).finally(() => { this.audio.muted = userMuted; });
+      }
+    }
+    pause() {
+      if (!this.playing) return;
+      const t = this.now();
+      this.playing = false;
+      this.stalled = false;
+      if (this.hasAudio) this.audio.pause();
+      this.setTime(t);
+      $('bufferBadge').hidden = true;
+      this.updateButton();
+    }
+    toggle() { this.playing ? this.pause() : this.play(); }
+    finish() {
+      this.playing = false; this.stalled = false;
+      if (this.hasAudio) this.audio.pause();
+      this.wall = { base: this.duration, at: performance.now() };
+      $('bufferBadge').hidden = true;
+      this.updateButton();
+      this.updateReadout(this.frameAt(this.now()));
+      savePosition(this.meta.id, 0);   // watched to the end: next time from the start
+      this.saved = { t: 0, at: performance.now() };
+    }
+    // Save the position every 5 s while playing, and shortly after a pause,
+    // step or seek.
+    maybeSave() {
+      if (!this.meta || !this.saved) return;
+      const t = this.frameAt(this.now()) / this.fps, p = performance.now();
+      if (Math.abs(t - this.saved.t) < 1) return;
+      if (p - this.saved.at < (this.playing ? 5000 : 1000)) return;
+      this.saved = { t, at: p };
+      savePosition(this.meta.id, t);
+    }
+    resume() {
+      this.stalled = false;
+      $('bufferBadge').hidden = true;
+      const t = this.now();
+      this.wall = { base: t, at: performance.now() };
+      if (this.hasAudio) {
+        this.audio.playbackRate = this.rate;
+        this.audio.play().catch(() => this.audioFailed());
+        this.smooth = { t: this.audio.currentTime, at: performance.now() };
+      }
+    }
+    stall() {
+      this.stalled = true;
+      const t = this.now();
+      if (this.hasAudio) this.audio.pause();
+      this.setTime(t);
+      $('bufferBadge').hidden = false;
+    }
+    seekFrame(i) {
+      if (!this.meta) return;
+      i = Math.max(0, Math.min(this.count - 1, i));
+      this.setTime(this.timeOf(i));
+      if (this.playing) this.stall();
+      this.drawn = -1;
+      this.updateReadout(i);
+    }
+    step(d) {
+      if (!this.meta) return;
+      const i = this.frameAt(this.now()) + d;
+      this.pause();
+      this.seekFrame(i);
+    }
+    setRate(r) {
+      if (this.hasAudio) this.audio.playbackRate = r;
+      const t = this.now();
+      this.wall = { base: t, at: performance.now() };
+    }
+
+    loop() {
+      requestAnimationFrame(this.loop);
+      if (!this.meta || !this.count) return;
+      const t = this.now();
+      if (!this.hasAudio && this.playing && !this.stalled && t >= this.duration) { this.finish(); }
+      const i = this.frameAt(this.now());
+      this.schedule(i);
+      this.maybeSave();
+      if (this.playing) {
+        if (this.stalled) {
+          // After running dry, wait for a few seconds of frames, so it does
+          // not stop again a moment later.
+          if (this.canStart(i, this.dropped ? 3 : 1.5)) this.resume();
+        } else if (!this.readyFrom(i, 1)) {
+          this.dropped++;
+          this.stall();
+        }
+      }
+      const e = this.cache.get(i);
+      if (i !== this.drawn && e && e.bitmap) {
+        this.ctx.drawImage(e.bitmap, 0, 0, this.canvas.width, this.canvas.height);
+        this.drawn = i;
+        this.shownQ = e.q;
+        this.updateReadout(i);
+      }
+    }
+
+    updateReadout(i) {
+      $('curTime').textContent = fmtTime(i / this.fps);
+      if (!scrubbing) $('timeline').value = String(i);
+      window.__frameState = { frame: i, time: this.now(), audio: this.hasAudio ? this.audio.currentTime : null, playing: this.playing, stalled: this.stalled, dropped: this.dropped, tier: this.base, shown: this.shownQ, mbps: +(this.speed() * 8 / 1e6).toFixed(1) };
+    }
+    updateButton() {
+      $('playBtn').innerHTML = this.playing ? ICONS.pause : ICONS.play;
+      $('playBtn').setAttribute('aria-label', this.playing ? 'Pause' : 'Play');
+    }
   }
 
-  els.form.addEventListener('submit', event => {
-    event.preventDefault(); hideMessage(); const raw = els.url.value.trim();
-    try { const youtube = parseYouTubeUrl(raw); if (youtube) { loadYouTubeSource(youtube); return; } const url = validateMP4Url(raw); loadCanvasSource(url, sourceName(url)); }
-    catch (error) {
-      if (error.message === 'youtube-id') showMessage('这个 YouTube 链接缺少有效的视频 ID。');
-      else if (error.message === 'mixed-content') showMessage('HTTPS 页面不能读取 HTTP 文件，请改用 HTTPS 地址。');
-      else showMessage('请输入完整的 YouTube 链接或 MP4 直链。');
+  function savePosition(id, t) {
+    const v = videos.find(x => x.id === id);
+    if (v) v.position = t;
+    fetch(`/api/videos/${id}/position`, {
+      method: 'POST', keepalive: true,
+      headers: { 'X-Frame-Key': key, 'Content-Type': 'application/json' }, body: JSON.stringify({ t }),
+    }).catch(() => {});
+  }
+  // Leaving the page (or the car screen turning off) saves too.
+  const saveNow = () => { if (player.meta) { const t = player.frameAt(player.now()) / player.fps; player.saved = { t, at: performance.now() }; savePosition(player.meta.id, t); } };
+  window.addEventListener('pagehide', saveNow);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+
+  const player = new Player();
+  let scrubbing = false;
+  let userMuted = false;
+
+  $('playBtn').addEventListener('click', () => player.toggle());
+  $('restartBtn').addEventListener('click', () => { player.seekFrame(0); $('resumeInfo').hidden = true; });
+  $('prevBtn').addEventListener('click', () => player.step(-1));
+  $('nextBtn').addEventListener('click', () => player.step(1));
+  $('rateSelect').addEventListener('change', () => player.setRate(player.rate));
+  $('timeline').addEventListener('input', () => { scrubbing = true; player.seekFrame(Number($('timeline').value)); });
+  $('timeline').addEventListener('change', () => { scrubbing = false; });
+  $('muteBtn').addEventListener('click', () => { userMuted = !userMuted; player.audio.muted = userMuted; updateMute(); });
+  function updateMute() { $('muteBtn').innerHTML = userMuted ? ICONS.muted : ICONS.sound; }
+
+  // Fullscreen: the real thing where the browser allows it on a page element
+  // (desktop, Android, iPad); iPhone Safari only allows it for <video>, so
+  // there the player card is stretched over the whole screen instead.
+  const card = $('playerCard');
+  const nativeFs = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  let fakeFs = false;
+  function updateFs() {
+    const on = fakeFs || fsElement() === card;
+    card.classList.toggle('is-fs', on);
+    document.body.classList.toggle('fs-lock', on);
+    $('fsBtn').innerHTML = on ? ICONS.fsExit : ICONS.fs;
+    $('fsBtn').setAttribute('aria-label', on ? 'Exit fullscreen' : 'Fullscreen');
+  }
+  function setFake(on) {
+    fakeFs = on;
+    updateFs();
+    if (on && screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+  }
+  $('fsBtn').addEventListener('click', () => {
+    if (fakeFs) return setFake(false);
+    if (fsElement()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+    if (nativeFs) {
+      const req = card.requestFullscreen || card.webkitRequestFullscreen;
+      try {
+        const p = req.call(card);
+        if (p && p.then) p.then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); }).catch(() => setFake(true));
+      } catch { setFake(true); }
+    } else setFake(true);
+  });
+  document.addEventListener('fullscreenchange', updateFs);
+  document.addEventListener('webkitfullscreenchange', updateFs);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && fakeFs) setFake(false); });
+
+  document.addEventListener('keydown', e => {
+    if (!player.meta || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'range') return;
+    if (e.key === ' ') { e.preventDefault(); player.toggle(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); e.shiftKey ? player.seekFrame(player.frameAt(player.now()) - Math.round(player.fps * 5)) : player.step(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); e.shiftKey ? player.seekFrame(player.frameAt(player.now()) + Math.round(player.fps * 5)) : player.step(1); }
+    else if (e.key.toLowerCase() === 'm') $('muteBtn').click();
+    else if (e.key.toLowerCase() === 'f') $('fsBtn').click();
+  });
+
+  // ------------------------------------------------------------ library
+  let videos = [];
+  let pollTimer = 0;
+  const armed = new Set();   // ids whose delete button was pressed once
+
+  async function refresh() {
+    if (!key) { showKeyCard(); return; }
+    try {
+      const res = await api('/api/videos');
+      videos = res.videos;
+      setServer('ok', 'Mac mini connected');
+      $('keyCard').hidden = true;
+      render();
+    } catch (e) {
+      if (e.message !== 'key') setServer('bad', 'Cannot reach the Mac mini');
+    }
+    clearTimeout(pollTimer);
+    const busy = videos.some(v => ['queued', 'downloading', 'processing', 'uploading'].includes(v.status));
+    pollTimer = setTimeout(refresh, busy ? 1500 : 15000);
+  }
+
+  function statusLine(v) {
+    if (v.status === 'ready') {
+      return `${fmtTime(v.duration, false)} · ${fmtFps(v.fps)} · ${v.frames} frames · ${v.height}p · ${fmtBytes(v.bytes)}`;
+    }
+    if (v.status === 'error') return v.error === '已取消' ? 'Cancelled' : (v.error || 'Failed');
+    const pct = v.progress ? ` ${Math.round(v.progress)}%` : '';
+    const label = { queued: 'Waiting', uploading: 'Uploading', downloading: 'Downloading', processing: 'Splitting frames' }[v.status] || v.status;
+    return label + pct;
+  }
+
+  const watched = v => v.status === 'ready' && v.position > 3 && v.position < v.duration - 3;
+
+  function render() {
+    const total = videos.reduce((a, v) => a + (v.bytes || 0), 0);
+    $('libInfo').textContent = videos.length ? `${videos.length} video${videos.length === 1 ? '' : 's'} · ${fmtBytes(total)}` : '';
+    $('libEmpty').hidden = videos.length > 0;
+    $('grid').innerHTML = videos.map(v => {
+      const ready = v.status === 'ready', busy = !ready && v.status !== 'error';
+      const thumb = ready
+        ? `<div class="thumb" data-play="${v.id}" style="background-image:url('${media(v.id, 'thumb.jpg')}')"><span class="dur">${fmtTime(v.duration, false)}</span>${watched(v) ? `<span class="watched"><i style="width:${Math.min(100, v.position / v.duration * 100)}%"></i></span>` : ''}</div>`
+        : `<div class="thumb pending">${busy ? 'Processing…' : 'Failed'}</div>`;
+      return `<article class="item${player.meta && player.meta.id === v.id ? ' active' : ''}">
+        ${thumb}
+        <div class="item-body">
+          <div class="item-title" title="${esc(v.title)}">${esc(v.title || v.source)}</div>
+          ${busy ? `<div class="bar"><i style="width:${v.progress || 2}%"></i></div>` : ''}
+          <div class="item-meta${v.status === 'error' ? ' error' : ''}">${esc(statusLine(v))}</div>
+          <div class="item-actions">
+            ${ready ? `<button class="ghost" data-play="${v.id}">${watched(v) ? `Continue ${fmtTime(v.position, false)}` : 'Play'}</button>` : ''}
+            ${busy ? `<button class="ghost" data-cancel="${v.id}">Cancel</button>` : ''}
+            ${v.status === 'error' && v.source.startsWith('http') ? `<button class="ghost" data-retry="${v.id}">Retry</button>` : ''}
+            <button class="ghost danger${armed.has(v.id) ? ' confirm' : ''}" data-del="${v.id}">${armed.has(v.id) ? 'Delete?' : 'Delete'}</button>
+          </div>
+        </div>
+      </article>`;
+    }).join('');
+  }
+
+  $('grid').addEventListener('click', async e => {
+    const t = e.target.closest('[data-play],[data-del],[data-cancel],[data-retry]');
+    if (!t) return;
+    if (t.dataset.play) {
+      const v = videos.find(x => x.id === t.dataset.play);
+      if (v) { if (player.meta) saveNow(); player.open(v); render(); $('playerCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    } else if (t.dataset.del) {
+      const id = t.dataset.del;
+      if (!armed.has(id)) {
+        armed.add(id); render();
+        setTimeout(() => { if (armed.delete(id)) render(); }, 4000);
+        return;
+      }
+      armed.delete(id);
+      if (player.meta && player.meta.id === id) { player.close(); $('playerCard').hidden = true; }
+      try { await api(`/api/videos/${id}`, { method: 'DELETE' }); } catch (err) { note('Delete failed: ' + err.message, true); }
+      refresh();
+    } else if (t.dataset.cancel) {
+      try { await api(`/api/videos/${t.dataset.cancel}/cancel`, { method: 'POST' }); } catch {}
+      refresh();
+    } else if (t.dataset.retry) {
+      const v = videos.find(x => x.id === t.dataset.retry);
+      if (v) submitUrl(v.source, v.requestFps, v.requestHeight).then(ok => ok && api(`/api/videos/${v.id}`, { method: 'DELETE' }).then(refresh));
     }
   });
-  els.file.addEventListener('change', () => {
-    const file = els.file.files && els.file.files[0]; if (!file) return; loadCanvasSource(file, file.name);
-    els.url.value = ''; els.clearUrl.hidden = true; els.file.value = '';
+
+  // ------------------------------------------------------------ new video
+  async function submitUrl(url, fps, height) {
+    $('startBtn').disabled = true;
+    try {
+      await api('/api/videos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, fps, height }) });
+      note('Sent to the Mac mini. Progress shows below.');
+      refresh();
+      return true;
+    } catch (e) {
+      if (e.message !== 'key') note('Could not start: ' + e.message, true);
+      return false;
+    } finally { $('startBtn').disabled = false; }
+  }
+
+  $('newForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const url = $('urlInput').value.trim();
+    if (await submitUrl(url, Number($('fpsSelect').value), Number($('heightSelect').value))) $('urlInput').value = '';
   });
-  els.url.addEventListener('input', () => { els.clearUrl.hidden = !els.url.value; });
-  els.clearUrl.addEventListener('click', () => { els.url.value = ''; els.clearUrl.hidden = true; els.url.focus(); });
-  els.prev.addEventListener('click', () => stepFrame(-1)); els.next.addEventListener('click', () => stepFrame(1)); els.play.addEventListener('click', togglePlayback);
-  els.timeline.addEventListener('input', () => {
-    if (!state.ready || durationValue() <= 0) return; const target = Number(els.timeline.value) / 1000 * durationValue();
-    if (state.mode === 'canvas') seekCanvasByTime(target); else { state.youtubePlayer.seekTo(target, true); updateReadout(target); }
+
+  $('fileInput').addEventListener('change', () => {
+    const f = $('fileInput').files[0];
+    $('fileInput').value = '';
+    if (f) uploadFile(f);
   });
-  els.rate.addEventListener('change', () => { if (state.mode === 'youtube') { try { state.youtubePlayer.setPlaybackRate(Number(els.rate.value) || 1); } catch {} } });
-  els.fps.addEventListener('change', () => updateReadout());
-  els.mute.addEventListener('click', () => {
-    if (state.mode !== 'youtube') return; const muted = !state.youtubePlayer.isMuted(); muted ? state.youtubePlayer.mute() : state.youtubePlayer.unMute();
-    els.mute.classList.toggle('muted', muted); els.mute.setAttribute('aria-label', muted ? '取消静音' : '静音');
+  // On a computer a video file can also be dropped anywhere on the page.
+  document.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('newCard').classList.add('drop'); } });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) $('newCard').classList.remove('drop'); });
+  document.addEventListener('drop', e => {
+    $('newCard').classList.remove('drop');
+    const f = e.dataTransfer && e.dataTransfer.files[0];
+    if (!f) return;
+    e.preventDefault();
+    uploadFile(f);
   });
-  els.fullscreen.addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await els.stage.requestFullscreen(); } catch { showMessage('当前浏览器不允许进入全屏模式。', 'info'); } });
-  document.addEventListener('keydown', event => {
-    if (event.target.matches('input, select, button')) return;
-    if (event.code === 'Space') { event.preventDefault(); togglePlayback(); }
-    else if (event.key === 'ArrowLeft') { event.preventDefault(); stepFrame(-1); }
-    else if (event.key === 'ArrowRight') { event.preventDefault(); stepFrame(1); }
-    else if (event.key.toLowerCase() === 'j') skip(-5); else if (event.key.toLowerCase() === 'l') skip(5);
-    else if (event.key.toLowerCase() === 'm' && state.mode === 'youtube') els.mute.click(); else if (event.key.toLowerCase() === 'f') els.fullscreen.click();
-  });
-  resetSource();
+  function uploadFile(f) {
+    const q = new URLSearchParams({ name: f.name, fps: $('fpsSelect').value, height: $('heightSelect').value, subs: $('subsSelect').value });
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload?' + q);
+    xhr.setRequestHeader('X-Frame-Key', key);
+    xhr.upload.onprogress = ev => { if (ev.lengthComputable) note(`Uploading ${Math.round(ev.loaded / ev.total * 100)}% (${fmtBytes(ev.loaded)} / ${fmtBytes(ev.total)})`); };
+    xhr.onload = () => {
+      if (xhr.status === 401) { showKeyCard(); return; }
+      if (xhr.status >= 200 && xhr.status < 300) { note('Uploaded. The Mac mini is processing it.'); refresh(); }
+      else { let msg = `HTTP ${xhr.status}`; try { msg = JSON.parse(xhr.responseText).error || msg; } catch {} note('Upload failed: ' + msg, true); }
+    };
+    xhr.onerror = () => note('Upload failed: cannot reach the Mac mini', true);
+    xhr.send(f);
+    note('Uploading 0%');
+  }
+
+  $('prevBtn').innerHTML = ICONS.prev; $('nextBtn').innerHTML = ICONS.next; $('playBtn').innerHTML = ICONS.play;
+  updateMute(); updateFs();
+  refresh();
 })();
