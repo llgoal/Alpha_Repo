@@ -12,9 +12,8 @@ POST   /api/upload?name=&fps=&height=   body = the video file: process it
 POST   /api/videos/<id>/cancel    stop a queued or running job
 POST   /api/videos/<id>/position  {"t": seconds}: where playback stopped
 DELETE /api/videos/<id>           delete the video and all its frames
-GET    /media/<id>/chunk?from=0&n=30  many frames in one response (see send_chunk)
-GET    /media/<id>/frames/000001.jpg, /media/<id>/audio.m4a, /media/<id>/thumb.jpg
-GET    /api/videos/<id>/zip       all frames + audio as a ZIP download
+GET    /media/<id>/chunk?from=0&n=30[&v=lite]  many frames in one response (see send_chunk)
+GET    /media/<id>/frames/000001.jpg, /media/<id>/lite/000001.jpg, /media/<id>/audio.m4a, /media/<id>/thumb.jpg
 
 Every /api and /media request needs the key, in the X-Frame-Key header or as
 ?k=<key>. The key is made on first start and kept in ~/.framestudio/key; open
@@ -33,7 +32,6 @@ import subprocess
 import sys
 import threading
 import time
-import zipfile
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote, quote
@@ -171,16 +169,17 @@ class Jobs:
     def start(self):
         threading.Thread(target=self.loop, daemon=True).start()
 
-    def add(self, vid):
+    def add(self, vid, lite_only=False):
         with self.cond:
+            if lite_only:
+                vid = ('lite', vid)
             self.queue.append(vid)
             self.cond.notify()
 
     def cancel(self, vid):
         with self.cond:
             self.cancelled.add(vid)
-            if vid in self.queue:
-                self.queue.remove(vid)
+            self.queue = [q for q in self.queue if q != vid and q != ('lite', vid)]
             if self.current == vid and self.proc and self.proc.poll() is None:
                 self.proc.terminate()
 
@@ -190,13 +189,22 @@ class Jobs:
                 while not self.queue:
                     self.cond.wait()
                 vid = self.queue.pop(0)
+                lite_only = isinstance(vid, tuple)
+                if lite_only:
+                    vid = vid[1]
                 self.current = vid
             try:
-                process(vid, self)
+                if lite_only:
+                    make_lite(vid, self)
+                else:
+                    process(vid, self)
             except Cancelled:
                 pass
             except Exception as e:  # noqa: BLE001  keep the worker alive
-                update_meta(vid, status='error', stage='Failed', error=str(e)[:500])
+                if lite_only:   # the video itself is still fine
+                    print('Low-bandwidth copy of %s failed: %s' % (vid, e), flush=True)
+                else:
+                    update_meta(vid, status='error', stage='Failed', error=str(e)[:500])
             finally:
                 with self.cond:
                     self.current = None
@@ -347,6 +355,35 @@ def extract(vid, src, jobs):
     }
 
 
+LITE_HEIGHT = 360
+LITE_Q = '9'
+
+
+def make_lite(vid, jobs):
+    """A small copy of the frames (360p, stronger JPEG compression, about a
+    fifth of the size) that the player switches to when the connection is
+    too slow for the full frames."""
+    meta = read_meta(vid)
+    if not meta or not meta.get('frames'):
+        return
+    d = vdir(vid)
+    lite = d / 'lite'
+    if lite.exists():
+        shutil.rmtree(lite)
+    lite.mkdir()
+    h = min(LITE_HEIGHT, meta.get('height') or LITE_HEIGHT)
+    h -= h % 2
+    cmd = [FFMPEG, '-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-start_number', '1',
+           '-i', str(d / 'frames' / '%06d.jpg'), '-vf', 'scale=-2:%d:flags=bicubic' % h,
+           '-q:v', LITE_Q, '-start_number', '1', str(lite / '%06d.jpg')]
+    jobs.run(vid, cmd)
+    n = len([f for f in lite.iterdir() if FRAME_RE.match(f.name)])
+    if n != meta['frames']:
+        shutil.rmtree(lite, ignore_errors=True)
+        raise RuntimeError('Low-bandwidth copy has %d of %d frames' % (n, meta['frames']))
+    update_meta(vid, lite=True, liteBytes=dir_size(lite), frameBytes=dir_size(d / 'frames'), bytes=dir_size(d))
+
+
 def process(vid, jobs):
     meta = read_meta(vid)
     if meta is None:
@@ -360,8 +397,10 @@ def process(vid, jobs):
             raise RuntimeError('The uploaded video file is missing')
     t0 = time.time()
     result = extract(vid, src, jobs)
+    update_meta(vid, stage='Making low-bandwidth copy', progress=99, **result)
+    make_lite(vid, jobs)
     update_meta(vid, status='ready', stage='Done', progress=100, error='',
-                seconds=round(time.time() - t0, 1), bytes=dir_size(d), **result)
+                seconds=round(time.time() - t0, 1), bytes=dir_size(d), frameBytes=dir_size(d / 'frames'))
 
 
 JOBS = Jobs()
@@ -378,6 +417,10 @@ def recover():
                 JOBS.add(m['id'])
             else:
                 update_meta(m['id'], status='error', stage='Failed', error='Interrupted by a server restart')
+    # Videos made before the low-bandwidth copy existed get one, in the background.
+    for m in list_videos():
+        if m['status'] == 'ready' and not m.get('lite'):
+            JOBS.add(m['id'], lite_only=True)
 
 
 # ---------------------------------------------------------------- HTTP
@@ -444,18 +487,16 @@ class Handler(SimpleHTTPRequestHandler):
                                             'ytdlp': bool(shutil.which(YTDLP) or Path(YTDLP).exists())})
             if path == '/api/videos':
                 return self.send_json(200, {'ok': True, 'videos': list_videos()})
-            m = re.match(r'^/api/videos/([a-f0-9]{12})(/zip)?$', path)
+            m = re.match(r'^/api/videos/([a-f0-9]{12})$', path)
             if m:
                 meta = read_meta(m.group(1))
                 if not meta:
                     return self.send_json(404, {'ok': False, 'error': 'not found'})
-                if m.group(2):
-                    return self.send_zip(meta)
                 return self.send_json(200, dict(meta, ok=True))
             m = re.match(r'^/media/([a-f0-9]{12})/chunk$', path)
             if m:
                 return self.send_chunk(m.group(1), q)
-            m = re.match(r'^/media/([a-f0-9]{12})/(frames/\d{6}\.jpg|audio\.m4a|thumb\.jpg)$', path)
+            m = re.match(r'^/media/([a-f0-9]{12})/((?:frames|lite)/\d{6}\.jpg|audio\.m4a|thumb\.jpg)$', path)
             if m:
                 return self.send_media(vdir(m.group(1)) / m.group(2))
             return self.send_json(404, {'ok': False, 'error': 'not found'})
@@ -467,13 +508,13 @@ class Handler(SimpleHTTPRequestHandler):
         """Many frames in one response, so a slow or far connection is not
         held up by one round trip per frame. ?from=<first index, 0-based>&n=<count>.
         Body: count (uint32 BE), then each frame's length (uint32 BE), then
-        the JPEGs one after another."""
+        the JPEGs one after another. &v=lite takes them from the small copy."""
         try:
             first = max(0, int((q.get('from') or ['0'])[0]))
             n = max(1, min(240, int((q.get('n') or ['30'])[0])))
         except ValueError:
             return self.send_json(400, {'ok': False, 'error': 'from/n'})
-        d = vdir(vid) / 'frames'
+        d = vdir(vid) / ('lite' if (q.get('v') or [''])[0] == 'lite' else 'frames')
         parts = []
         for i in range(first, first + n):
             try:
@@ -533,46 +574,6 @@ class Handler(SimpleHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
                 left -= len(chunk)
-
-    def send_zip(self, meta):
-        if meta.get('status') != 'ready':
-            return self.send_json(409, {'ok': False, 'error': 'Not finished yet'})
-        d = vdir(meta['id'])
-        name = re.sub(r'[\\/:*?"<>|\s]+', '_', meta.get('title') or meta['id'])[:80] or meta['id']
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/zip')
-        self.send_header('Content-Disposition', "attachment; filename=\"frames.zip\"; filename*=UTF-8''%s.zip"
-                         % quote(name))
-        self.send_header('Connection', 'close')
-        self.close_connection = True
-        self.end_headers()
-
-        class Out:  # zipfile only needs write/flush on an unseekable stream
-            def __init__(self, w):
-                self.w, self.n = w, 0
-
-            def write(self, b):
-                self.w.write(b)
-                self.n += len(b)
-                return len(b)
-
-            def tell(self):
-                return self.n
-
-            def flush(self):
-                self.w.flush()
-        try:
-            with zipfile.ZipFile(Out(self.wfile), 'w', zipfile.ZIP_STORED) as z:
-                info = {k: meta.get(k) for k in ('title', 'source', 'fps', 'frames', 'width', 'height',
-                                                   'duration', 'hasAudio', 'audioOffset')}
-                z.writestr('info.json', json.dumps(info, ensure_ascii=False, indent=2))
-                if (d / 'audio.m4a').exists():
-                    z.write(d / 'audio.m4a', 'audio.m4a')
-                for f in sorted((d / 'frames').iterdir()):
-                    if FRAME_RE.match(f.name):
-                        z.write(f, 'frames/' + f.name)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
 
     # --- POST / DELETE
     def read_json(self):

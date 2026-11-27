@@ -255,12 +255,19 @@
       const px = this.canvas.width * this.canvas.height * 4;
       // Decoded bitmaps are big: at most about 120 MB of them (1.5 s at most).
       this.bmpAhead = Math.max(2, Math.min(Math.ceil(this.fps * 1.5), Math.floor(120e6 / px)));
-      // Compressed frames are small: keep ~20 s of them ready, fetched in
-      // one-second chunks (one request each, not one per frame).
-      this.blobAhead = Math.max(this.bmpAhead, Math.ceil(this.fps * 20));
-      this.chunk = Math.max(8, Math.round(this.fps));
+      // Compressed frames are small: keep up to ~10 s of them, fetched in
+      // half-second chunks, nearest first, two requests at a time, so the
+      // frames needed next are never stuck behind ones needed later.
+      this.blobAhead = Math.max(this.bmpAhead, Math.ceil(this.fps * 10));
+      this.chunk = Math.max(4, Math.round(this.fps / 2));
       this.chunkLoading = new Set();
       this.useChunks = true;
+      // Full frames when the connection keeps up, otherwise the small copy
+      // (360p). Starts small when there is one, and moves up once measured.
+      this.mainBps = (meta.frameBytes || meta.bytes || 0) / Math.max(0.1, meta.duration || this.duration);
+      this.setTier(meta.lite ? 'lite' : 'main');
+      this.net = { bytes: 0, busy: 0, since: 0 };
+      this.asked = new Set();
       this.wall = { base: 0, at: performance.now() };
       this.drawn = -1;
       this.dropped = 0;
@@ -287,6 +294,7 @@
       for (const e of this.cache.values()) if (e.bitmap) e.bitmap.close();
       this.cache.clear();
       this.inflight = 0;
+      $('tierBadge').hidden = true;
       this.setAudioSource('');
       this.meta = null;
     }
@@ -323,16 +331,43 @@
       if (!e) { e = {}; this.cache.set(i, e); }
       return e;
     }
+    // --- connection speed: bytes received over the time any request was open
+    netStart() {
+      if (this.inflight++ === 0) this.net.since = performance.now();
+    }
+    netEnd(bytes) {
+      this.net.bytes += bytes;
+      if (--this.inflight === 0) this.net.busy += performance.now() - this.net.since;
+      // Weigh the last ~10 s of transfer, not the whole session.
+      if (this.net.busy > 10000) { this.net.busy /= 2; this.net.bytes /= 2; }
+    }
+    speed() {
+      const busy = this.net.busy + (this.inflight ? performance.now() - this.net.since : 0);
+      // Bytes per second; unknown until enough has come in.
+      return busy > 300 || this.net.bytes > 3e5 ? this.net.bytes / Math.max(busy, 1) * 1000 : 0;
+    }
+    pickTier() {
+      if (!this.meta.lite || !this.mainBps) return;
+      const sp = this.speed(), need = this.mainBps * this.rate;
+      if (!sp) return;
+      if (this.tier === 'main' && sp < need * 1.15) this.setTier('lite');
+      else if (this.tier === 'lite' && sp > need * 1.6) this.setTier('main');
+    }
+    setTier(t) {
+      this.tier = t;
+      $('tierBadge').hidden = t !== 'lite';
+    }
     fetchBlob(i) {
-      const e = this.entry(i), gen = this.gen;
+      const e = this.entry(i), gen = this.gen, tier = this.tier;
       if (e.blob || e.loading) return;
       e.loading = true;
-      this.inflight++;
-      fetch(media(this.meta.id, 'frames/' + frameName(i)))
+      this.netStart();
+      let got = 0;
+      fetch(media(this.meta.id, (tier === 'lite' ? 'lite/' : 'frames/') + frameName(i)))
         .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
-        .then(b => { if (gen === this.gen) e.blob = b; })
+        .then(b => { got = b.size; if (gen === this.gen) { e.blob = b; e.lite = tier === 'lite'; } })
         .catch(() => {})
-        .finally(() => { if (gen === this.gen) { e.loading = false; this.inflight--; } });
+        .finally(() => { if (gen === this.gen) { e.loading = false; this.netEnd(got); } });
     }
     decode(i) {
       const e = this.entry(i), gen = this.gen;
@@ -344,47 +379,69 @@
         .finally(() => { e.decoding = false; });
     }
     fetchChunk(c) {
-      const gen = this.gen, from = c * this.chunk, n = Math.min(this.chunk, this.count - from);
+      const gen = this.gen, from = c * this.chunk, n = Math.min(this.chunk, this.count - from), tier = this.tier;
       this.chunkLoading.add(c);
-      this.inflight++;
-      fetch(media(this.meta.id, 'chunk') + `&from=${from}&n=${n}`)
+      this.netStart();
+      let got = 0;
+      const url = media(this.meta.id, 'chunk') + `&from=${from}&n=${n}` + (tier === 'lite' ? '&v=lite' : '');
+      // Asked before: the browser's cache may answer, which says nothing
+      // about the network, so it is left out of the speed estimate.
+      const again = this.asked.has(url);
+      this.asked.add(url);
+      fetch(url)
         .then(r => { if (r.status === 404) this.useChunks = false; if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
         .then(buf => {
+          if (!again) got = buf.byteLength;
           if (gen !== this.gen) return;
           const v = new DataView(buf), k = v.getUint32(0);
           let off = 4 + 4 * k;
           for (let j = 0; j < k; j++) {
             const len = v.getUint32(4 + 4 * j);
             const e = this.entry(from + j);
-            if (!e.blob) e.blob = new Blob([new Uint8Array(buf, off, len)], { type: 'image/jpeg' });
+            // A full frame replaces a small one, unless it is already on screen soon.
+            if (!e.blob || (e.lite && tier === 'main' && !e.bitmap)) {
+              e.blob = new Blob([new Uint8Array(buf, off, len)], { type: 'image/jpeg' });
+              e.lite = tier === 'lite';
+            }
             off += len;
           }
         })
         .catch(() => {})
-        .finally(() => { if (gen === this.gen) { this.chunkLoading.delete(c); this.inflight--; } });
+        .finally(() => { if (gen === this.gen) { this.chunkLoading.delete(c); this.netEnd(got); } });
     }
     schedule(cur) {
-      const last = Math.min(this.count - 1, cur + this.blobAhead);
+      this.pickTier();
+      // On the small copy, look less far ahead: what is fetched early would
+      // only be fetched again once the connection allows full frames.
+      const last = Math.min(this.count - 1, cur + (this.tier === 'lite' ? Math.ceil(this.fps * 6) : this.blobAhead));
       if (this.useChunks) {
-        // Nearest chunks first, at most 3 requests at a time.
-        for (let c = Math.floor(cur / this.chunk); c * this.chunk <= last && this.inflight < 3; c++) {
+        // Nearest chunks first, at most 2 requests at a time. With full frames,
+        // small ones more than 3 s ahead are fetched again in full.
+        const upgradeFrom = this.tier === 'main' ? cur + Math.ceil(this.fps * 3) : Infinity;
+        for (let c = Math.floor(cur / this.chunk); c * this.chunk <= last && this.inflight < 2; c++) {
           if (this.chunkLoading.has(c)) continue;
           const from = c * this.chunk, to = Math.min(this.count, from + this.chunk);
           let missing = false;
-          for (let i = Math.max(from, cur); i < to; i++) { const e = this.cache.get(i); if (!e || !e.blob) { missing = true; break; } }
+          for (let i = Math.max(from, cur); i < to; i++) {
+            const e = this.cache.get(i);
+            if (!e || !e.blob || (e.lite && from >= upgradeFrom)) { missing = true; break; }
+          }
           if (missing) this.fetchChunk(c);
         }
       } else {
-        for (let i = cur; i <= last && this.inflight < 8; i++) {
+        for (let i = cur; i <= last && this.inflight < 6; i++) {
           const e = this.cache.get(i);
           if (!e || (!e.blob && !e.loading)) this.fetchBlob(i);
         }
       }
       const lastBmp = Math.min(this.count - 1, cur + this.bmpAhead);
+      // Keep whole chunks (the last one may reach past \`last\`), and what the
+      // longer full-frame window would keep, so switching does not drop frames.
+      const keepTo = cur + this.blobAhead + this.chunk + 2;
       for (let i = cur; i <= lastBmp; i++) this.decode(i);
       // Let go of what is far behind or far ahead (after a seek).
       for (const [i, e] of this.cache) {
-        if (i < cur - 3 || i > last + 2) {
+        if (i < cur - 3 || i > keepTo) {
           if (e.loading) continue;
           if (e.bitmap) e.bitmap.close();
           this.cache.delete(i);
@@ -419,7 +476,7 @@
       this.updateButton();
       if (this.hasAudio) audioCtx();   // unlock Web Audio while we have the tap
       const i = this.frameAt(this.now());
-      if (this.canStart(i, 2)) { this.stalled = true; this.resume(); return; }
+      if (this.canStart(i, 1.5)) { this.stalled = true; this.resume(); return; }
       this.stalled = true;   // start once a little is buffered
       $('bufferBadge').hidden = false;
       if (this.hasAudio && !(this.audio instanceof WebAudioOut)) {
@@ -513,7 +570,7 @@
         if (this.stalled) {
           // After running dry, wait for a few seconds of frames, so it does
           // not stop again a moment later.
-          if (this.canStart(i, this.dropped ? 4 : 2)) this.resume();
+          if (this.canStart(i, this.dropped ? 3 : 1.5)) this.resume();
         } else if (!this.readyFrom(i, 1)) {
           this.dropped++;
           this.stall();
@@ -530,7 +587,7 @@
     updateReadout(i) {
       $('curTime').textContent = fmtTime(i / this.fps);
       if (!scrubbing) $('timeline').value = String(i);
-      window.__frameState = { frame: i, time: this.now(), audio: this.hasAudio ? this.audio.currentTime : null, playing: this.playing, stalled: this.stalled, dropped: this.dropped };
+      window.__frameState = { frame: i, time: this.now(), audio: this.hasAudio ? this.audio.currentTime : null, playing: this.playing, stalled: this.stalled, dropped: this.dropped, tier: this.tier, mbps: +(this.speed() * 8 / 1e6).toFixed(1) };
     }
     updateButton() {
       $('playBtn').innerHTML = this.playing ? ICONS.pause : ICONS.play;
@@ -657,7 +714,7 @@
           ${busy ? `<div class="bar"><i style="width:${v.progress || 2}%"></i></div>` : ''}
           <div class="item-meta${v.status === 'error' ? ' error' : ''}">${esc(statusLine(v))}</div>
           <div class="item-actions">
-            ${ready ? `<button class="ghost" data-play="${v.id}">${watched(v) ? `Continue ${fmtTime(v.position, false)}` : 'Play'}</button><a class="ghost" href="/api/videos/${v.id}/zip?k=${encodeURIComponent(key)}">Download ZIP</a>` : ''}
+            ${ready ? `<button class="ghost" data-play="${v.id}">${watched(v) ? `Continue ${fmtTime(v.position, false)}` : 'Play'}</button>` : ''}
             ${busy ? `<button class="ghost" data-cancel="${v.id}">Cancel</button>` : ''}
             ${v.status === 'error' && v.source.startsWith('http') ? `<button class="ghost" data-retry="${v.id}">Retry</button>` : ''}
             <button class="ghost danger${armed.has(v.id) ? ' confirm' : ''}" data-del="${v.id}">${armed.has(v.id) ? 'Delete?' : 'Delete'}</button>

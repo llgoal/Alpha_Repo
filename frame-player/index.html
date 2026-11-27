@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#09090c">
   <meta name="description" content="Turns a video into frame images and plays them back at their frame rate with sound.">
   <title>Frame Studio</title>
-  <link rel="stylesheet" href="./styles.css?v=7">
+  <link rel="stylesheet" href="./styles.css?v=8">
 </head>
 <body>
   <main class="shell">
@@ -58,6 +58,7 @@
       <div class="stage" id="stage">
         <canvas id="canvas"></canvas>
         <div class="badge buffer-badge" id="bufferBadge" hidden>Buffering…</div>
+        <div class="badge tier-badge" id="tierBadge" hidden title="The connection is slow, so smaller frames are shown">Low bandwidth</div>
       </div>
       <div class="timeline-row">
         <span id="curTime">0:00.00</span>
@@ -89,6 +90,6 @@
       <p class="empty" id="libEmpty" hidden>No videos yet. Paste a YouTube link to start.</p>
     </section>
   </main>
-  <script src="./app.js?v=10"></script>
+  <script src="./app.js?v=11"></script>
 </body>
 </html>
