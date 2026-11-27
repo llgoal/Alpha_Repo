@@ -113,6 +113,72 @@
     el.classList.toggle('error', isError);
   }
 
+  // ------------------------------------------------------------ sound
+  // Some browsers (the Tesla one among them) refuse to start an <audio>
+  // element. Web Audio is a separate path: the whole track is decoded into
+  // memory and played from there. It offers the same few things the player
+  // uses from an <audio> element, so the two can be swapped.
+  let sharedCtx = null;
+  function audioCtx() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!sharedCtx && AC) { try { sharedCtx = new AC(); } catch {} }
+    if (sharedCtx && sharedCtx.state === 'suspended') sharedCtx.resume().catch(() => {});
+    return sharedCtx;
+  }
+  class WebAudioOut {
+    constructor(onended) {
+      this.onended = onended;
+      this.url = ''; this.data = null; this.buf = null;
+      this.node = null; this.want = false;
+      this._t = 0; this._rate = 1; this._muted = false; this.startAt = 0;
+      this.ctx = audioCtx();
+      if (this.ctx) { this.gain = this.ctx.createGain(); this.gain.connect(this.ctx.destination); }
+    }
+    setSource(url) {
+      this.stopNode(); this.want = false; this.buf = null; this._t = 0; this.url = url || '';
+      this.data = url ? fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }) : null;
+    }
+    async decoded() {
+      if (this.buf) return this.buf;
+      const url = this.url, data = await this.data;
+      const buf = await new Promise((res, rej) => this.ctx.decodeAudioData(data.slice(0), res, rej));
+      if (url === this.url) this.buf = buf;
+      return buf;
+    }
+    async play() {
+      if (!this.ctx || !this.data) throw new Error('no web audio');
+      this.want = true;
+      await this.ctx.resume();
+      if (this.ctx.state !== 'running') throw new Error('blocked');
+      await this.decoded();
+      if (this.want && !this.node) this.startNode();
+    }
+    pause() { this.want = false; if (this.node) { this._t = this.currentTime; this.stopNode(); } }
+    startNode() {
+      const n = this.ctx.createBufferSource();
+      n.buffer = this.buf; n.playbackRate.value = this._rate; n.connect(this.gain);
+      n.onended = () => { if (this.node === n) { this.node = null; this._t = this.buf.duration; if (this.onended) this.onended(); } };
+      this.startAt = this.ctx.currentTime;
+      n.start(0, Math.max(0, Math.min(this._t, this.buf.duration)));
+      this.node = n;
+    }
+    stopNode() { const n = this.node; this.node = null; if (n) { try { n.stop(); } catch {} n.disconnect(); } }
+    get currentTime() {
+      if (!this.node) return this._t;
+      return Math.min(this.buf.duration, this._t + (this.ctx.currentTime - this.startAt) * this._rate);
+    }
+    set currentTime(t) {
+      if (this.node) { this.stopNode(); this._t = t; this.startNode(); } else this._t = t;
+    }
+    get playbackRate() { return this._rate; }
+    set playbackRate(r) {
+      if (this.node) { this._t = this.currentTime; this.startAt = this.ctx.currentTime; this.node.playbackRate.value = r; }
+      this._rate = r;
+    }
+    get muted() { return this._muted; }
+    set muted(m) { this._muted = m; if (this.gain) this.gain.gain.value = m ? 0 : 1; }
+  }
+
   // ------------------------------------------------------------ frame player
   // Frames are JPEGs on the server. The audio element is the clock: at audio
   // time t the stage shows frame floor((t - audioOffset) * fps). Without
@@ -146,19 +212,45 @@
     // Last moment of the clock: the frames start audioOffset into the audio.
     get end() { return this.duration + (this.hasAudio ? Math.max(0, this.meta.audioOffset || 0) : 0); }
     get rate() { return Number($('rateSelect').value) || 1; }
-    get hasAudio() { return !!(this.meta && this.meta.hasAudio); }
+    get hasAudio() { return !!(this.meta && this.meta.hasAudio && !this.silent); }
+    setAudioSource(url) {
+      if (this.audio instanceof WebAudioOut) return this.audio.setSource(url);
+      if (url) { this.audio.src = url; this.audio.load(); }
+      else { this.audio.removeAttribute('src'); this.audio.load(); }
+    }
+    // The <audio> element was refused: try Web Audio, and if that is refused
+    // too, keep the picture going without sound.
+    audioFailed() {
+      if (!this.playing) return;
+      const t = this.now();
+      if (!(this.audio instanceof WebAudioOut)) {
+        this.audio.pause();
+        this.audio = new WebAudioOut(() => this.finish());
+        this.audio.muted = userMuted;
+        this.audio.playbackRate = this.rate;
+        this.audio.setSource(media(this.meta.id, 'audio.m4a'));
+        this.audio.currentTime = t;
+        this.smooth = { t, at: performance.now() };
+        this.audio.play().catch(() => this.audioFailed());
+        return;
+      }
+      this.audio.pause();
+      this.silent = true;
+      this.wall = { base: t, at: performance.now() };
+      note('这个浏览器不让网页播放声音，先静音播放画面。', true);
+    }
 
     open(meta) {
       this.close();
       this.meta = meta;
+      this.silent = false;
       this.gen++;
       this.canvas.width = meta.width || 1280;
       this.canvas.height = meta.height || 720;
       $('stage').style.aspectRatio = `${this.canvas.width} / ${this.canvas.height}`;
       if (this.hasAudio) {
-        this.audio.src = media(meta.id, 'audio.m4a');
+        this.setAudioSource(media(meta.id, 'audio.m4a'));
         this.audio.playbackRate = this.rate;
-        this.audio.load();
       }
       const px = this.canvas.width * this.canvas.height * 4;
       // Decoded bitmaps are big: at most about 120 MB of them (1.5 s at most).
@@ -181,8 +273,7 @@
       for (const e of this.cache.values()) if (e.bitmap) e.bitmap.close();
       this.cache.clear();
       this.inflight = 0;
-      this.audio.removeAttribute('src');
-      this.audio.load();
+      this.setAudioSource('');
       this.meta = null;
     }
 
@@ -271,11 +362,12 @@
       if (this.frameAt(this.now()) >= this.count - 1) this.setTime(0);
       this.playing = true;
       this.updateButton();
+      if (this.hasAudio) audioCtx();   // unlock Web Audio while we have the tap
       const i = this.frameAt(this.now());
       if (this.readyFrom(i, Math.min(this.bmpAhead, Math.max(2, Math.ceil(this.fps / 3))))) { this.stalled = true; this.resume(); return; }
       this.stalled = true;   // start once a little is buffered
       $('bufferBadge').hidden = false;
-      if (this.hasAudio) {
+      if (this.hasAudio && !(this.audio instanceof WebAudioOut)) {
         // Phones only let audio start from a tap: start it now, hold it
         // until the frames are ready, then the loop lets it run.
         const t = this.now();
@@ -311,7 +403,7 @@
       this.wall = { base: t, at: performance.now() };
       if (this.hasAudio) {
         this.audio.playbackRate = this.rate;
-        this.audio.play().catch(() => { this.playing = false; this.updateButton(); note('浏览器阻止了自动播放，请再点一次播放。', true); });
+        this.audio.play().catch(() => this.audioFailed());
         this.smooth = { t: this.audio.currentTime, at: performance.now() };
       }
     }

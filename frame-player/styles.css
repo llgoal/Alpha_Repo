@@ -34,6 +34,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; }
 .brand-mark i { width: 6px; height: 18px; border-radius: 2px; background: var(--violet); }
 .brand-mark i:nth-child(2) { background: var(--violet-2); }
 .brand-mark i:nth-child(3) { background: var(--green); }
+.safe-use { margin-left: auto; margin-right: 14px; color: var(--muted); font-size: 12px; }
 .server { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .server .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .server.ok .dot { background: var(--green); }
