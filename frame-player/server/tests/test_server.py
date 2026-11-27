@@ -128,6 +128,24 @@ class ServerTest(unittest.TestCase):
         _, lib = self.req('/api/videos')
         self.assertIn(m['id'], [v['id'] for v in lib['videos']])
 
+    def test_mkv_with_subtitles_and_wide_pixels(self):
+        srt = self.tmp / 'a.srt'
+        srt.write_text('1\n00:00:00,200 --> 00:00:01,500\nHello\n')
+        mkv = self.tmp / 'clip.mkv'
+        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=720x480:rate=25:duration=2',
+                        '-f', 'lavfi', '-i', 'sine=frequency=300:duration=2', '-f', 'lavfi', '-i', 'sine=frequency=600:duration=2',
+                        '-i', str(srt), '-map', '0', '-map', '1', '-map', '2', '-map', '3', '-c:v', 'libx264', '-aspect', '16:9',
+                        '-c:a', 'ac3', '-disposition:a:0', '0', '-disposition:a:1', 'default', '-c:s', 'srt', str(mkv)], check=True)
+        code, m = self.req('/api/upload?name=clip.mkv', mkv.read_bytes())
+        self.assertEqual(code, 200)
+        m = self.wait(m['id'])
+        self.assertEqual(m['status'], 'ready', m.get('error'))
+        self.assertEqual((m['frames'], m['height']), (50, 480))
+        self.assertAlmostEqual(m['width'] / m['height'], 16 / 9, delta=0.02)   # square pixels
+        self.assertTrue(m['hasAudio'])
+        libass = 'subtitles' in subprocess.run(['ffmpeg', '-hide_banner', '-filters'], capture_output=True, text=True).stdout
+        self.assertEqual(bool(m['subtitles']), libass)
+
     def test_failed_download_reports_error(self):
         _, m = self.req('/api/videos', {'url': 'https://youtu.be/fail'})
         m = self.wait(m['id'])

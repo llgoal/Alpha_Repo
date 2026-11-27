@@ -59,6 +59,7 @@ button { cursor: pointer; border: 0; }
 .ghost { border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; background: transparent; cursor: pointer; color: var(--text); }
 .ghost:hover { border-color: var(--violet); }
 .upload input { display: none; }
+.new-card.drop { border-color: var(--violet); border-style: dashed; }
 .note { margin: 10px 0 0 !important; font-size: 13px; }
 .note.error { color: var(--danger) !important; }
 

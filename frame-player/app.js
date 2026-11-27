@@ -808,8 +808,20 @@
   $('fileInput').addEventListener('change', () => {
     const f = $('fileInput').files[0];
     $('fileInput').value = '';
+    if (f) uploadFile(f);
+  });
+  // On a computer a video file can also be dropped anywhere on the page.
+  document.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('newCard').classList.add('drop'); } });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) $('newCard').classList.remove('drop'); });
+  document.addEventListener('drop', e => {
+    $('newCard').classList.remove('drop');
+    const f = e.dataTransfer && e.dataTransfer.files[0];
     if (!f) return;
-    const q = new URLSearchParams({ name: f.name, fps: $('fpsSelect').value, height: $('heightSelect').value });
+    e.preventDefault();
+    uploadFile(f);
+  });
+  function uploadFile(f) {
+    const q = new URLSearchParams({ name: f.name, fps: $('fpsSelect').value, height: $('heightSelect').value, subs: $('subsSelect').value });
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload?' + q);
     xhr.setRequestHeader('X-Frame-Key', key);
@@ -822,7 +834,7 @@
     xhr.onerror = () => note('Upload failed: cannot reach the Mac mini', true);
     xhr.send(f);
     note('Uploading 0%');
-  });
+  }
 
   $('prevBtn').innerHTML = ICONS.prev; $('nextBtn').innerHTML = ICONS.next; $('playBtn').innerHTML = ICONS.play;
   updateMute(); updateFs();

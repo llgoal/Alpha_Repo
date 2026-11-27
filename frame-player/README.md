@@ -2,7 +2,8 @@
 
 Turns a video into individual frame images plus its sound, then plays the
 frames back at their frame rate with the sound in sync, so it looks like the
-video. Paste a YouTube link (or upload a file); your Mac mini downloads it,
+video. Paste a YouTube link, or upload a video file (MKV, MP4, MOV, WebM … up to
+64 GB; on a computer you can also drop it on the page); your Mac mini downloads it,
 splits it with ffmpeg and keeps it in a library you can play or delete.
 
 ## How it works
@@ -28,6 +29,13 @@ splits it with ffmpeg and keeps it in a library you can play or delete.
   frames further ahead (up to a minute) again at the best quality that can
   arrive in time. Playback stays smooth and gets sharper as the buffer grows,
   or while paused.
+- Uploaded files: ffmpeg reads any container and codec it knows (H.264,
+  HEVC/10-bit, AV1, VP9, MPEG-2 …; AAC, AC-3, DTS, FLAC, Opus …). The track
+  marked default is used for sound (folded to stereo). Subtitles in the file
+  are burned into the frames (default track, else Chinese, else the first;
+  text ones need ffmpeg with libass, which Homebrew's has); choose "Subtitles:
+  Off" to skip. HDR is tone-mapped to normal colours and non-square pixels
+  (DVD rips) are made square.
 - Controls: play/pause (space), previous/next frame (← →, Shift for 5 s),
   timeline, speed 0.25–2×, volume/mute (M), fullscreen (F).
 

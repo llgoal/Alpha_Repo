@@ -39,7 +39,7 @@ from urllib.parse import urlparse, parse_qs, unquote, quote
 APP_DIR = Path(__file__).resolve().parent.parent
 STATE_DIR = Path(os.environ.get('FRAMESTUDIO_HOME') or (Path.home() / '.framestudio'))
 VIDEOS = STATE_DIR / 'videos'
-MAX_UPLOAD = 4 * 1024 ** 3
+MAX_UPLOAD = 64 * 1024 ** 3
 FPS_CHOICES = (0, 12, 15, 24, 25, 30, 48, 50, 60)   # 0 = the video's own rate
 HEIGHT_CHOICES = (0, 360, 480, 720, 1080)            # 0 = the video's own size
 ID_RE = re.compile(r'^[a-f0-9]{12}$')
@@ -238,9 +238,24 @@ def probe(path):
     if out.returncode != 0:
         raise RuntimeError('Cannot read this video file: ' + out.stdout[-200:] + out.stderr[-300:])
     info = json.loads(out.stdout)
-    video = next((s for s in info.get('streams', []) if s.get('codec_type') == 'video'
-                  and not (s.get('disposition') or {}).get('attached_pic')), None)
-    audio = next((s for s in info.get('streams', []) if s.get('codec_type') == 'audio'), None)
+    streams = info.get('streams', [])
+
+    def pick(kind, prefer_zh=False):
+        """The track marked default, else (subtitles) a Chinese one, else the first."""
+        found = [s for s in streams if s.get('codec_type') == kind
+                 and not (s.get('disposition') or {}).get('attached_pic')]
+        for s in found:
+            if (s.get('disposition') or {}).get('default'):
+                return s
+        if prefer_zh:
+            for s in found:
+                lang = ((s.get('tags') or {}).get('language') or '').lower()
+                if lang in ('chi', 'zho', 'zh', 'chs', 'cht', 'cmn', 'yue'):
+                    return s
+        return found[0] if found else None
+    video = pick('video')
+    audio = pick('audio')
+    sub = pick('subtitle', prefer_zh=True)
     if not video:
         raise RuntimeError('This file has no video picture')
 
@@ -258,10 +273,24 @@ def probe(path):
             return float(s.get('start_time') or 0)
         except (TypeError, ValueError):
             return 0.0
+    try:
+        sn, sd = (video.get('sample_aspect_ratio') or '1:1').split(':')
+        sar = float(sn) / float(sd) if float(sn) and float(sd) else 1.0
+    except ValueError:
+        sar = 1.0
+    subs = [s for s in streams if s.get('codec_type') == 'subtitle']
     return {
         'fps': fps, 'duration': duration,
         'width': int(video.get('width') or 0), 'height': int(video.get('height') or 0),
         'hasAudio': audio is not None,
+        'videoIndex': video['index'], 'audioIndex': audio['index'] if audio else None,
+        'sar': sar,
+        'hdr': video.get('color_transfer') in ('smpte2084', 'arib-std-b67'),
+        # Which subtitle track to burn in: its position among subtitle tracks
+        # (for the subtitles filter), its stream index, and whether it is
+        # text (drawn by libass) or pictures (overlaid).
+        'sub': {'si': subs.index(sub), 'index': sub['index'], 'codec': sub.get('codec_name') or '',
+                'lang': (sub.get('tags') or {}).get('language') or ''} if sub else None,
         'videoStart': start(video), 'audioStart': start(audio) if audio else 0.0,
     }
 
@@ -297,6 +326,23 @@ def download(vid, url, jobs):
     return max(files, key=lambda f: f.stat().st_size)
 
 
+TEXT_SUBS = ('subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text')
+PICTURE_SUBS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub')
+_FILTERS = {}
+
+
+def has_filter(name):
+    """Whether this ffmpeg build has a filter (zscale and subtitles need extra libraries)."""
+    if not _FILTERS:
+        try:
+            out = subprocess.run([FFMPEG, '-hide_banner', '-filters'], capture_output=True, text=True, timeout=30).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ''
+        _FILTERS.update({l.split()[1]: True for l in out.splitlines() if len(l.split()) > 2 and '->' in l})
+        _FILTERS.setdefault('', True)
+    return name in _FILTERS
+
+
 def extract(vid, src, jobs):
     """Frames at the chosen rate (and size) as JPEGs, audio as AAC in .m4a."""
     d = vdir(vid)
@@ -311,15 +357,37 @@ def extract(vid, src, jobs):
     if frames_dir.exists():
         shutil.rmtree(frames_dir)
     frames_dir.mkdir()
-    vf = 'fps=%s' % fps
+    # Picture filters, in order: HDR to normal colours, square pixels, frame
+    # rate, size. Text subtitles are drawn before resizing, at the source size.
+    pre = []
+    if info['hdr'] and has_filter('zscale') and has_filter('tonemap'):
+        pre.append('zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,'
+                   'zscale=t=bt709:m=bt709:r=tv,format=yuv420p')
+    if abs(info['sar'] - 1) > 0.01:
+        pre.append('scale=trunc(iw*sar/2)*2:ih,setsar=1')
+    post = ['fps=%s' % fps]
     if out_h and out_h != info['height']:
-        vf += ',scale=-2:%d:flags=lanczos' % out_h
+        post.append('scale=-2:%d:flags=lanczos' % out_h)
+    sub = info['sub'] if meta.get('burnSubs', True) else None
+    v_in = '[0:%d]' % info['videoIndex']
+    if sub and sub['codec'] in TEXT_SUBS and has_filter('subtitles'):
+        # Run from the video's folder so the file name needs no escaping.
+        graph = v_in + ','.join(pre + ['subtitles=%s:si=%d' % (src.name, sub['si'])] + post) + '[v]'
+    elif sub and sub['codec'] in PICTURE_SUBS:
+        # Picture subtitles (Blu-ray/DVD) are made for the source frame: lay
+        # them on first, then correct colours and size.
+        graph = v_in + '[0:%d]overlay=(W-w)/2:H-h:eof_action=pass,' % sub['index'] + ','.join(pre + post) + '[v]'
+    else:
+        sub = None
+        graph = v_in + ','.join(pre + post) + '[v]'
     update_meta(vid, status='processing', stage='Splitting frames', progress=0, duration=info['duration'],
-                hasAudio=info['hasAudio'])
-    cmd = [FFMPEG, '-hide_banner', '-nostdin', '-y', '-i', str(src),
-           '-map', '0:v:0', '-vf', vf, '-q:v', '5', '-start_number', '1', str(frames_dir / '%06d.jpg')]
+                hasAudio=info['hasAudio'], subtitles=(sub['lang'] or 'yes') if sub else '')
+    cmd = [FFMPEG, '-hide_banner', '-nostdin', '-y', '-i', src.name,
+           '-filter_complex', graph, '-map', '[v]', '-q:v', '5', '-start_number', '1', str(frames_dir / '%06d.jpg')]
     if info['hasAudio']:
-        cmd += ['-map', '0:a:0', '-vn', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', str(d / 'audio.m4a')]
+        # Stereo AAC: every browser plays it, and 5.1 tracks are folded down.
+        cmd += ['-map', '0:%d' % info['audioIndex'], '-vn', '-c:a', 'aac', '-ac', '2', '-b:a', '192k',
+                '-movflags', '+faststart', str(d / 'audio.m4a')]
     cmd[3:3] = ['-progress', 'pipe:1', '-nostats']
     total = info['duration'] or 0
     last = [0.0]
@@ -333,7 +401,7 @@ def extract(vid, src, jobs):
             if p - last[0] >= 1:
                 last[0] = p
                 update_meta(vid, progress=round(p, 1))
-    jobs.run(vid, cmd, on_line)
+    jobs.run(vid, cmd, on_line, cwd=str(src.parent))
     count = len([f for f in frames_dir.iterdir() if FRAME_RE.match(f.name)])
     if not count:
         raise RuntimeError('No frames came out')
@@ -642,7 +710,11 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/upload':
             n = int(self.headers.get('Content-Length') or 0)
             if n <= 0 or n > MAX_UPLOAD:
-                return self.send_json(413, {'ok': False, 'error': 'The file is empty or over 4 GB'})
+                return self.send_json(413, {'ok': False, 'error': 'The file is empty or over 64 GB'})
+            free = shutil.disk_usage(VIDEOS).free
+            if n * 1.5 + 2 * 1024 ** 3 > free:   # the file, its frames, and some room
+                return self.send_json(507, {'ok': False, 'error': 'Not enough free disk space on the server (%.0f GB free)'
+                                            % (free / 1024 ** 3)})
             name = unquote((q.get('name') or ['video'])[0])[:200]
             ext = (Path(name).suffix.lower() or '.mp4')[:6]
             if not re.match(r'^\.[a-z0-9]{1,5}$', ext):
@@ -650,6 +722,7 @@ class Handler(SimpleHTTPRequestHandler):
             meta = new_video(title=Path(name).stem or 'Uploaded video', source='upload:' + name,
                              requestFps=clean_choice((q.get('fps') or [0])[0], FPS_CHOICES, 0),
                              requestHeight=clean_choice((q.get('height') or [720])[0], HEIGHT_CHOICES, 720),
+                             burnSubs=(q.get('subs') or ['1'])[0] != '0',
                              status='uploading', stage='Uploading')
             dest = vdir(meta['id']) / ('source' + ext)
             left = n

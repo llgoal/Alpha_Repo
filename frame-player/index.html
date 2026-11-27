@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#09090c">
   <meta name="description" content="Turns a video into frame images and plays them back at their frame rate with sound.">
   <title>Frame Studio</title>
-  <link rel="stylesheet" href="./styles.css?v=9">
+  <link rel="stylesheet" href="./styles.css?v=10">
 </head>
 <body>
   <main class="shell">
@@ -30,7 +30,7 @@
       <form id="newForm">
         <label class="sr-only" for="urlInput">YouTube or video link</label>
         <div class="row">
-          <input id="urlInput" type="url" inputmode="url" autocomplete="off" placeholder="Paste a YouTube link, e.g. https://youtu.be/…" required>
+          <input id="urlInput" type="url" inputmode="url" autocomplete="off" placeholder="Paste a YouTube link, or drop a video file here" required>
           <button class="primary" id="startBtn" type="submit">Process</button>
         </div>
         <div class="row options">
@@ -48,7 +48,12 @@
               <option value="480">480p</option><option value="360">360p</option><option value="0">Original</option>
             </select>
           </label>
-          <label class="ghost upload">Upload a video<input id="fileInput" type="file" accept="video/*"></label>
+          <label title="For uploaded files that carry subtitles (e.g. MKV)">Subtitles
+            <select id="subsSelect">
+              <option value="1" selected>Show</option><option value="0">Off</option>
+            </select>
+          </label>
+          <label class="ghost upload">Upload a video<input id="fileInput" type="file" accept="video/*,.mkv,.webm,.avi,.mov,.m4v,.ts,.m2ts,.flv,.wmv,.mpg,.mpeg"></label>
         </div>
         <p class="note" id="newNote" hidden></p>
       </form>
@@ -89,6 +94,6 @@
       <p class="empty" id="libEmpty" hidden>No videos yet. Paste a YouTube link to start.</p>
     </section>
   </main>
-  <script src="./app.js?v=12"></script>
+  <script src="./app.js?v=13"></script>
 </body>
 </html>
